@@ -27,6 +27,7 @@ jobs:
       # opcionais do Linux (@emnapi/*) e o npm ci recusa o lock.
       - run: npm install --no-audit --no-fund
       - run: npm run lint
+      - run: npm test
       - run: npm run build
         env:
           PAGES_BASE_PATH: /atividades
