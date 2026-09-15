@@ -36,6 +36,13 @@ yarn-error.log*
 # vercel
 .vercel
 
+# planilhas de dados (repositório público: nunca versionar dados reais)
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+~$*
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
