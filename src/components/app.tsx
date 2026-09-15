@@ -6,6 +6,7 @@ import {
   CircleCheck,
   FilePlus,
   FolderOpen,
+  Gear,
   LayoutColumns3,
   ListUl,
   Persons,
@@ -16,6 +17,7 @@ import { useState } from "react";
 import type { ErroPlanilha } from "@/lib/planilha";
 import { DadosProvider, useDados, type Salvamento } from "@/lib/store";
 import { Atividades } from "./atividades";
+import { Fluxos } from "./fluxos";
 import { Kanban } from "./kanban";
 import { Painel } from "./painel";
 import { Time } from "./time";
@@ -164,7 +166,7 @@ function ListaErros({ erros }: { erros: ErroPlanilha[] }) {
   );
 }
 
-type Aba = "painel" | "atividades" | "kanban" | "time";
+type Aba = "painel" | "fluxos" | "atividades" | "kanban" | "time";
 
 function Shell() {
   const { nomeArquivo, fecharArquivo } = useDados();
@@ -208,6 +210,10 @@ function Shell() {
                 <ChartColumn className="size-4" /> Painel
                 <Tabs.Indicator />
               </Tabs.Tab>
+              <Tabs.Tab id="fluxos">
+                <Gear className="size-4" /> Fluxos
+                <Tabs.Indicator />
+              </Tabs.Tab>
               <Tabs.Tab id="atividades">
                 <ListUl className="size-4" /> Atividades
                 <Tabs.Indicator />
@@ -224,6 +230,9 @@ function Shell() {
           </Tabs.ListContainer>
           <Tabs.Panel className="pt-4" id="painel">
             <Painel onAbrirAtividade={abrirAtividade} />
+          </Tabs.Panel>
+          <Tabs.Panel className="pt-4" id="fluxos">
+            <Fluxos onAbrirAtividade={abrirAtividade} />
           </Tabs.Panel>
           <Tabs.Panel className="pt-4" id="atividades">
             <Atividades selecionada={atividadeAberta} onSelecionar={abrirAtividade} />

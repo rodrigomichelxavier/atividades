@@ -16,13 +16,26 @@ Gestão pessoal de atividades e fluxos de trabalho.
 
 | Aba | Conteúdo |
 | --- | --- |
-| Atividades | ID, título, descrição, responsável, prioridade, status, início, prazo |
+| Atividades | ID, título, descrição, responsável, prioridade, status, início, prazo, criada em, fluxo, ordem, SLA (dias úteis), predecessoras |
 | Etapas | ID, atividade, ordem, etapa, responsável, status, início, prazo, SLA (dias úteis), predecessoras, conclusão, observações |
+| Fluxos | ID, modelo, nome, data de início — um por fluxo de trabalho iniciado |
+| Fluxos modelo | ID, nome, descrição — os fluxos padrão |
+| Fluxos modelo itens | ID, modelo, ordem, atividade, responsável, prioridade, SLA (dias úteis), predecessoras |
 | Pessoas | ID, nome, área, papel, e-mail |
 
-As colunas de responsável e atividade guardam o **ID** (ex.: `P-001`, `A-001`). Predecessoras são IDs de etapas separados por vírgula (ex.: `E-001, E-002`).
+As colunas de responsável, atividade, fluxo e modelo guardam o **ID** (ex.: `P-001`, `A-001`, `F-001`, `FM-001`). Predecessoras são IDs separados por vírgula (ex.: `E-001, E-002`).
 
-### Regras do fluxo
+Planilhas criadas antes dos fluxos continuam funcionando: as abas e colunas novas são opcionais na leitura e passam a ser gravadas no próximo salvamento.
+
+### Fluxos de trabalho
+
+- Um **fluxo padrão** é a receita de um processo recorrente: a lista de atividades na ordem, cada uma com responsável sugerido, SLA em dias úteis e de quais outras ela depende. Monte em **Fluxos → Configurar fluxo de trabalho**.
+- **Iniciar fluxo de trabalho** cria as atividades de verdade a partir do padrão. Na tela de início você escolhe a data de início, desmarca o que não se aplica e ajusta responsável, SLA e datas.
+- As datas sugeridas seguem as dependências: uma atividade sem predecessora começa no início do fluxo; com predecessora, começa no primeiro dia útil depois que a última delas vence. Desmarcar uma atividade no meio religa a cadeia em quem sobrou.
+- Depois de iniciado, as datas ficam como estão: atrasos não empurram as seguintes automaticamente — edite a atividade quando precisar.
+- Na lista e no Kanban, o filtro **Origem** separa atividades de rotina, de fluxo, ou de um fluxo específico.
+
+### Regras das etapas
 
 - **SLA** conta dias úteis (seg–sex) a partir da data de início: início na segunda com SLA 2 vence na quarta.
 - O **prazo** da etapa é o prazo manual, se preenchido; senão, o calculado pelo SLA.

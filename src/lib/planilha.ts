@@ -4,14 +4,18 @@ import {
   PAPEIS,
   PRIORIDADES,
   STATUS,
+  DADOS_VAZIOS,
   type Atividade,
   type Dados,
   type DataISO,
   type Etapa,
+  type Fluxo,
+  type FluxoModelo,
+  type ModeloItem,
   type Pessoa,
 } from "./tipos.ts";
 
-const VERSAO_FORMATO = 1;
+const VERSAO_FORMATO = 2;
 
 // Ordem e nomes das colunas de cada aba. A leitura localiza as colunas pelo nome,
 // então é possível reordenar colunas ou acrescentar colunas próprias no Excel.
@@ -27,6 +31,10 @@ const COLUNAS = {
     "Data início",
     "Prazo",
     "Criada em",
+    "Fluxo (ID)",
+    "Ordem",
+    "SLA (dias úteis)",
+    "Predecessoras",
   ],
   Etapas: [
     "ID",
@@ -42,9 +50,33 @@ const COLUNAS = {
     "Data conclusão",
     "Observações",
   ],
+  Fluxos: ["ID", "Modelo (ID)", "Nome", "Data início", "Criado em"],
+  "Fluxos modelo": ["ID", "Nome", "Descrição", "Criado em"],
+  "Fluxos modelo itens": [
+    "ID",
+    "Modelo (ID)",
+    "Ordem",
+    "Atividade",
+    "Responsável (ID)",
+    "Prioridade",
+    "SLA (dias úteis)",
+    "Predecessoras",
+  ],
 } as const;
 
 type Aba = keyof typeof COLUNAS;
+
+/**
+ * Abas e colunas criadas depois da versão 1 do formato: planilhas antigas não as
+ * têm, então a ausência não é erro — a leitura devolve vazio e a próxima
+ * gravação já sai no formato novo.
+ */
+const ABAS_OBRIGATORIAS = ["Pessoas", "Atividades", "Etapas"] as const satisfies readonly Aba[];
+
+const COLUNAS_OPCIONAIS: Partial<Record<Aba, readonly string[]>> = {
+  Atividades: ["Fluxo (ID)", "Ordem", "SLA (dias úteis)", "Predecessoras"],
+};
+
 type Celula = string | number | boolean | Date | null;
 
 export interface ErroPlanilha {
@@ -113,6 +145,10 @@ export function gerarPlanilha(dados: Dados): ArrayBuffer {
         celulaData(a.dataInicio),
         celulaData(a.prazo),
         celulaData(a.criadaEm),
+        a.fluxoId,
+        a.fluxoId ? a.ordem : null,
+        a.slaDiasUteis,
+        a.predecessoras.join(", "),
       ]),
     ),
     "Atividades",
@@ -143,6 +179,42 @@ export function gerarPlanilha(dados: Dados): ArrayBuffer {
   XLSX.utils.book_append_sheet(
     wb,
     montarAba(
+      "Fluxos",
+      dados.fluxos.map((f) => [f.id, f.modeloId, f.nome, celulaData(f.dataInicio), celulaData(f.criadoEm)]),
+    ),
+    "Fluxos",
+  );
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    montarAba(
+      "Fluxos modelo",
+      dados.modelos.map((m) => [m.id, m.nome, m.descricao, celulaData(m.criadoEm)]),
+    ),
+    "Fluxos modelo",
+  );
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    montarAba(
+      "Fluxos modelo itens",
+      dados.modeloItens.map((i) => [
+        i.id,
+        i.modeloId,
+        i.ordem,
+        i.titulo,
+        i.responsavelId,
+        i.prioridade,
+        i.slaDiasUteis,
+        i.predecessoras.join(", "),
+      ]),
+    ),
+    "Fluxos modelo itens",
+  );
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    montarAba(
       "Pessoas",
       dados.pessoas.map((p) => [p.id, p.nome, p.area, p.papel, p.email]),
     ),
@@ -167,6 +239,18 @@ export function gerarPlanilha(dados: Dados): ArrayBuffer {
 
 // ---------- Leitura ----------
 
+function hojeISO(): DataISO {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Lê uma célula "E-001, E-002" como lista de IDs. */
+function listaDeIds(texto: string): string[] {
+  return texto
+    .split(/[,;]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function normalizar(texto: string): string {
   return texto.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
@@ -182,10 +266,13 @@ class LeitorAba {
     this.avisos = avisos;
     const todas = XLSX.utils.sheet_to_json<Celula[]>(ws, { header: 1, raw: true, defval: null });
     const cabecalho = (todas[0] ?? []).map((c) => normalizar(String(c ?? "")));
+    const opcionais = COLUNAS_OPCIONAIS[aba] ?? [];
     for (const coluna of COLUNAS[aba]) {
       const i = cabecalho.indexOf(normalizar(coluna));
-      if (i === -1) erros.push({ aba, linha: 1, mensagem: `Coluna "${coluna}" não encontrada.` });
-      else this.indices.set(coluna, i);
+      if (i !== -1) this.indices.set(coluna, i);
+      else if (!opcionais.includes(coluna)) {
+        erros.push({ aba, linha: 1, mensagem: `Coluna "${coluna}" não encontrada.` });
+      }
     }
     this.linhas = todas.slice(1);
   }
@@ -259,6 +346,16 @@ class LeitorAba {
   }
 }
 
+/** Leitor de uma aba que pode não existir em planilhas antigas. */
+function opcional(
+  aba: Aba,
+  wb: XLSX.WorkBook,
+  avisos: ErroPlanilha[],
+  erros: ErroPlanilha[],
+): LeitorAba | null {
+  return wb.Sheets[aba] ? new LeitorAba(aba, wb.Sheets[aba], avisos, erros) : null;
+}
+
 export function lerPlanilha(conteudo: ArrayBuffer): ResultadoLeitura {
   let wb: XLSX.WorkBook;
   try {
@@ -269,8 +366,7 @@ export function lerPlanilha(conteudo: ArrayBuffer): ResultadoLeitura {
     ]);
   }
 
-  const abas = Object.keys(COLUNAS) as Aba[];
-  const encontradas = abas.filter((aba) => wb.Sheets[aba]);
+  const encontradas = ABAS_OBRIGATORIAS.filter((aba) => wb.Sheets[aba]);
   if (encontradas.length === 0) {
     const temConteudo = wb.SheetNames.some((nome) => {
       const ref = wb.Sheets[nome]?.["!ref"];
@@ -287,12 +383,12 @@ export function lerPlanilha(conteudo: ArrayBuffer): ResultadoLeitura {
         },
       ]);
     }
-    return { dados: { pessoas: [], atividades: [], etapas: [] }, avisos: [], vazia: true };
+    return { dados: { ...DADOS_VAZIOS }, avisos: [], vazia: true };
   }
 
   const erros: ErroPlanilha[] = [];
   const avisos: ErroPlanilha[] = [];
-  for (const aba of abas) {
+  for (const aba of ABAS_OBRIGATORIAS) {
     if (!wb.Sheets[aba]) erros.push({ aba, linha: null, mensagem: `Aba "${aba}" não encontrada.` });
   }
   if (erros.length > 0) throw new PlanilhaInvalidaError(erros);
@@ -300,6 +396,10 @@ export function lerPlanilha(conteudo: ArrayBuffer): ResultadoLeitura {
   const pessoasL = new LeitorAba("Pessoas", wb.Sheets.Pessoas, avisos, erros);
   const atividadesL = new LeitorAba("Atividades", wb.Sheets.Atividades, avisos, erros);
   const etapasL = new LeitorAba("Etapas", wb.Sheets.Etapas, avisos, erros);
+  // Abas de fluxo só existem a partir da versão 2 do formato.
+  const modelosL = opcional("Fluxos modelo", wb, avisos, erros);
+  const itensL = opcional("Fluxos modelo itens", wb, avisos, erros);
+  const fluxosL = opcional("Fluxos", wb, avisos, erros);
   if (erros.length > 0) throw new PlanilhaInvalidaError(erros);
 
   const idsVistos = new Set<string>();
@@ -341,11 +441,68 @@ export function lerPlanilha(conteudo: ArrayBuffer): ResultadoLeitura {
     return id;
   }
 
+  const modelos: FluxoModelo[] = [];
+  modelosL?.linhas.forEach((linha, i) => {
+    if (modelosL.vazia(linha)) return;
+    const id = idValido(modelosL, linha, i);
+    if (!id) return;
+    modelos.push({
+      id,
+      nome: modelosL.texto(linha, "Nome") || id,
+      descricao: modelosL.texto(linha, "Descrição"),
+      criadoEm: modelosL.data(linha, "Criado em", i) ?? hojeISO(),
+    });
+  });
+  const idsModelos = new Set(modelos.map((m) => m.id));
+
+  const modeloItens: ModeloItem[] = [];
+  itensL?.linhas.forEach((linha, i) => {
+    if (itensL.vazia(linha)) return;
+    const modeloId = itensL.texto(linha, "Modelo (ID)");
+    if (!idsModelos.has(modeloId)) {
+      itensL.avisar(i, `Modelo "${modeloId}" não existe: a atividade do modelo foi ignorada.`);
+      return;
+    }
+    const id = idValido(itensL, linha, i);
+    if (!id) return;
+    modeloItens.push({
+      id,
+      modeloId,
+      ordem: itensL.inteiro(linha, "Ordem", i) ?? 0,
+      titulo: itensL.texto(linha, "Atividade") || id,
+      responsavelId: responsavel(itensL, linha, i),
+      prioridade: itensL.opcao(linha, "Prioridade", PRIORIDADES, "Média", i),
+      slaDiasUteis: itensL.inteiro(linha, "SLA (dias úteis)", i),
+      predecessoras: listaDeIds(itensL.texto(linha, "Predecessoras")),
+    });
+  });
+
+  const fluxos: Fluxo[] = [];
+  fluxosL?.linhas.forEach((linha, i) => {
+    if (fluxosL.vazia(linha)) return;
+    const id = idValido(fluxosL, linha, i);
+    if (!id) return;
+    const modeloId = fluxosL.textoOuNulo(linha, "Modelo (ID)");
+    fluxos.push({
+      id,
+      modeloId: modeloId && idsModelos.has(modeloId) ? modeloId : null,
+      nome: fluxosL.texto(linha, "Nome") || id,
+      dataInicio: fluxosL.data(linha, "Data início", i) ?? hojeISO(),
+      criadoEm: fluxosL.data(linha, "Criado em", i) ?? hojeISO(),
+    });
+  });
+  const idsFluxos = new Set(fluxos.map((f) => f.id));
+
   const atividades: Atividade[] = [];
   atividadesL.linhas.forEach((linha, i) => {
     if (atividadesL.vazia(linha)) return;
     const id = idValido(atividadesL, linha, i);
     if (!id) return;
+    const fluxoBruto = atividadesL.textoOuNulo(linha, "Fluxo (ID)");
+    if (fluxoBruto && !idsFluxos.has(fluxoBruto)) {
+      atividadesL.avisar(i, `Fluxo "${fluxoBruto}" não existe: a atividade ficou como rotina.`);
+    }
+    const fluxo = fluxoBruto && idsFluxos.has(fluxoBruto) ? fluxoBruto : null;
     atividades.push({
       id,
       titulo: atividadesL.texto(linha, "Título") || id,
@@ -355,10 +512,31 @@ export function lerPlanilha(conteudo: ArrayBuffer): ResultadoLeitura {
       status: atividadesL.opcao(linha, "Status", STATUS, "A fazer", i),
       dataInicio: atividadesL.data(linha, "Data início", i),
       prazo: atividadesL.data(linha, "Prazo", i),
-      criadaEm: atividadesL.data(linha, "Criada em", i) ?? new Date().toISOString().slice(0, 10),
+      criadaEm: atividadesL.data(linha, "Criada em", i) ?? hojeISO(),
+      fluxoId: fluxo,
+      ordem: (fluxo && atividadesL.inteiro(linha, "Ordem", i)) || 0,
+      slaDiasUteis: atividadesL.inteiro(linha, "SLA (dias úteis)", i),
+      predecessoras: fluxo ? listaDeIds(atividadesL.texto(linha, "Predecessoras")) : [],
     });
   });
   const idsAtividades = new Set(atividades.map((a) => a.id));
+
+  // Predecessoras de atividade precisam existir e ser do mesmo fluxo.
+  const atividadePorId = new Map(atividades.map((a) => [a.id, a]));
+  for (const atividade of atividades) {
+    atividade.predecessoras = atividade.predecessoras.filter((pid) => {
+      const pred = atividadePorId.get(pid);
+      const ok = !!pred && pred.fluxoId === atividade.fluxoId && pid !== atividade.id;
+      if (!ok) {
+        avisos.push({
+          aba: "Atividades",
+          linha: null,
+          mensagem: `Atividade ${atividade.id}: predecessora "${pid}" inválida (inexistente ou de outro fluxo) foi removida.`,
+        });
+      }
+      return ok;
+    });
+  }
 
   const etapas: Etapa[] = [];
   etapasL.linhas.forEach((linha, i) => {
@@ -380,11 +558,7 @@ export function lerPlanilha(conteudo: ArrayBuffer): ResultadoLeitura {
       dataInicio: etapasL.data(linha, "Data início", i),
       prazo: etapasL.data(linha, "Prazo", i),
       slaDiasUteis: etapasL.inteiro(linha, "SLA (dias úteis)", i),
-      predecessoras: etapasL
-        .texto(linha, "Predecessoras")
-        .split(/[,;]/)
-        .map((s) => s.trim())
-        .filter(Boolean),
+      predecessoras: listaDeIds(etapasL.texto(linha, "Predecessoras")),
       dataConclusao: etapasL.data(linha, "Data conclusão", i),
       observacoes: etapasL.texto(linha, "Observações"),
     });
@@ -407,5 +581,5 @@ export function lerPlanilha(conteudo: ArrayBuffer): ResultadoLeitura {
     });
   }
 
-  return { dados: { pessoas, atividades, etapas }, avisos, vazia: false };
+  return { dados: { pessoas, atividades, etapas, modelos, modeloItens, fluxos }, avisos, vazia: false };
 }

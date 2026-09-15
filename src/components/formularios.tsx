@@ -3,11 +3,29 @@
 import { toast } from "@heroui/react";
 import { useState } from "react";
 import { hoje, somarDiasUteis } from "@/lib/datas";
-import { dependentes, etapasDaAtividade, proximoId } from "@/lib/fluxo";
-import { aplicarStatusEtapa, salvarAtividade, salvarEtapa, salvarPessoa } from "@/lib/operacoes";
-import { useDados } from "@/lib/store";
-import { PAPEIS, PRIORIDADES, STATUS, type Atividade, type Etapa, type Pessoa } from "@/lib/tipos";
+import { dependentes, dependentesDoItem, etapasDaAtividade, itensDoModelo, proximoId } from "@/lib/fluxo";
 import {
+  aplicarStatusEtapa,
+  salvarAtividade,
+  salvarEtapa,
+  salvarModelo,
+  salvarModeloItem,
+  salvarPessoa,
+} from "@/lib/operacoes";
+import { useDados } from "@/lib/store";
+import {
+  ATIVIDADE_SEM_FLUXO,
+  PAPEIS,
+  PRIORIDADES,
+  STATUS,
+  type Atividade,
+  type Etapa,
+  type FluxoModelo,
+  type ModeloItem,
+  type Pessoa,
+} from "@/lib/tipos";
+import {
+  CampoCheck,
   CampoMultiplo,
   CampoSelecao,
   CampoTexto,
@@ -76,6 +94,7 @@ export function FormAtividade({
       dataInicio: null,
       prazo: null,
       criadaEm: hoje(),
+      ...ATIVIDADE_SEM_FLUXO,
     },
   );
   const set = <K extends keyof Atividade>(k: K, v: Atividade[K]) => setValor((a) => ({ ...a, [k]: v }));
@@ -298,6 +317,208 @@ export function FormEtapa({
         />
       </div>
       <CampoTexto multilinha label="Observações" valor={valor.observacoes} onChange={(v) => set("observacoes", v)} />
+    </JanelaFormulario>
+  );
+}
+
+// ---------- Fluxo de trabalho ----------
+
+export function FormModelo({ modelo, onFechar, onCriado }: { modelo: FluxoModelo | null; onFechar: () => void; onCriado?: (id: string) => void }) {
+  const { dados, alterar } = useDados();
+  const [valor, setValor] = useState<FluxoModelo>(
+    modelo ?? { id: "", nome: "", descricao: "", criadoEm: hoje() },
+  );
+
+  return (
+    <JanelaFormulario
+      aberta
+      podeSalvar={valor.nome.trim() !== ""}
+      titulo={modelo ? "Editar fluxo padrão" : "Novo fluxo padrão"}
+      onFechar={onFechar}
+      onSalvar={() => {
+        const id = valor.id || proximoId("FM", dados.modelos.map((m) => m.id));
+        alterar((d) => salvarModelo(d, { ...valor, id, nome: valor.nome.trim() }));
+        toast.success(modelo ? "Fluxo padrão atualizado" : "Fluxo padrão criado");
+        onFechar();
+        if (!modelo) onCriado?.(id);
+      }}
+    >
+      <CampoTexto
+        autoFocus
+        obrigatorio
+        label="Nome do fluxo"
+        placeholder="Ex.: Desenvolvimento de produto"
+        valor={valor.nome}
+        onChange={(v) => setValor((m) => ({ ...m, nome: v }))}
+      />
+      <CampoTexto
+        multilinha
+        descricao="Opcional. Aparece na lista de fluxos padrão."
+        label="Descrição"
+        valor={valor.descricao}
+        onChange={(v) => setValor((m) => ({ ...m, descricao: v }))}
+      />
+    </JanelaFormulario>
+  );
+}
+
+export function FormModeloItem({
+  modeloId,
+  item,
+  onFechar,
+}: {
+  modeloId: string;
+  item: ModeloItem | null;
+  onFechar: () => void;
+}) {
+  const { dados, alterar } = useDados();
+  const irmas = itensDoModelo(modeloId, dados.modeloItens);
+  const [valor, setValor] = useState<ModeloItem>(
+    item ?? {
+      id: "",
+      modeloId,
+      ordem: (irmas.at(-1)?.ordem ?? 0) + 1,
+      titulo: "",
+      responsavelId: null,
+      prioridade: "Média",
+      slaDiasUteis: null,
+      predecessoras: irmas.length > 0 ? [irmas.at(-1)!.id] : [],
+    },
+  );
+  const set = <K extends keyof ModeloItem>(k: K, v: ModeloItem[K]) => setValor((i) => ({ ...i, [k]: v }));
+
+  // Não pode depender de si mesma nem de quem já depende dela (evita ciclos).
+  const bloqueadas = item ? dependentesDoItem(item.id, dados.modeloItens) : new Set<string>();
+  const opcoesPredecessoras = irmas
+    .filter((i) => i.id !== valor.id && !bloqueadas.has(i.id))
+    .map((i) => ({ id: i.id, rotulo: i.titulo }));
+
+  return (
+    <JanelaFormulario
+      aberta
+      podeSalvar={valor.titulo.trim() !== ""}
+      tamanho="lg"
+      titulo={item ? "Editar atividade do fluxo" : "Nova atividade do fluxo"}
+      onFechar={onFechar}
+      onSalvar={() => {
+        const id = valor.id || proximoId("MI", dados.modeloItens.map((i) => i.id));
+        alterar((d) => salvarModeloItem(d, { ...valor, id, titulo: valor.titulo.trim() }));
+        toast.success(item ? "Atividade atualizada" : "Atividade adicionada ao fluxo");
+        onFechar();
+      }}
+    >
+      <CampoTexto
+        autoFocus
+        obrigatorio
+        label="Atividade"
+        placeholder="Ex.: Protocolo de NTA"
+        valor={valor.titulo}
+        onChange={(v) => set("titulo", v)}
+      />
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <CampoSelecao
+          descricao="Sugestão ao iniciar o fluxo; dá para trocar na hora."
+          label="Responsável padrão"
+          opcoes={opcoesPessoas(dados.pessoas)}
+          permitirVazio="Sem responsável"
+          valor={valor.responsavelId}
+          onChange={(v) => set("responsavelId", v)}
+        />
+        <CampoSelecao
+          label="Prioridade"
+          opcoes={opcoesDe(PRIORIDADES)}
+          valor={valor.prioridade}
+          onChange={(v) => v && set("prioridade", v as ModeloItem["prioridade"])}
+        />
+        <CampoTexto
+          descricao="Dias úteis. Vazio = 1 dia."
+          label="SLA (dias úteis)"
+          tipo="number"
+          valor={valor.slaDiasUteis == null ? "" : String(valor.slaDiasUteis)}
+          onChange={(v) => set("slaDiasUteis", v === "" ? null : Math.max(0, Math.floor(Number(v) || 0)))}
+        />
+      </div>
+      <CampoMultiplo
+        descricao={
+          opcoesPredecessoras.length === 0
+            ? "Nenhuma outra atividade disponível neste fluxo."
+            : "Começa depois que estas terminarem. Sem predecessora, começa junto com o fluxo."
+        }
+        label="Depende de"
+        opcoes={opcoesPredecessoras}
+        placeholder="Nenhuma (começa no início do fluxo)"
+        valores={valor.predecessoras.filter((id) => opcoesPredecessoras.some((o) => o.id === id))}
+        onChange={(v) => set("predecessoras", v)}
+      />
+    </JanelaFormulario>
+  );
+}
+
+/** Cola uma lista pronta: uma atividade por linha, encadeadas na ordem. */
+export function FormModeloLote({ modeloId, onFechar }: { modeloId: string; onFechar: () => void }) {
+  const { alterar } = useDados();
+  const [texto, setTexto] = useState("");
+  const [encadear, setEncadear] = useState(true);
+
+  const titulos = texto
+    .split("\n")
+    .map((l) => l.replace(/^\s*(\d+[.)-]|[-*•])\s*/, "").trim())
+    .filter(Boolean);
+
+  return (
+    <JanelaFormulario
+      aberta
+      podeSalvar={titulos.length > 0}
+      tamanho="lg"
+      titulo="Colar lista de atividades"
+      onFechar={onFechar}
+      onSalvar={() => {
+        alterar((d) => {
+          let dadosAtuais = d;
+          const irmas = itensDoModelo(modeloId, d.modeloItens);
+          let ordem = (irmas.at(-1)?.ordem ?? 0) + 1;
+          let anterior = irmas.at(-1)?.id ?? null;
+          for (const titulo of titulos) {
+            const id = proximoId("MI", dadosAtuais.modeloItens.map((i) => i.id));
+            dadosAtuais = salvarModeloItem(dadosAtuais, {
+              id,
+              modeloId,
+              ordem: ordem++,
+              titulo,
+              responsavelId: null,
+              prioridade: "Média",
+              slaDiasUteis: null,
+              predecessoras: encadear && anterior ? [anterior] : [],
+            });
+            anterior = id;
+          }
+          return dadosAtuais;
+        });
+        toast.success(`${titulos.length} atividade(s) adicionada(s)`);
+        onFechar();
+      }}
+    >
+      <CampoTexto
+        autoFocus
+        multilinha
+        descricao="Uma atividade por linha. Numeração e marcadores no começo da linha são descartados."
+        label="Atividades"
+        placeholder={"Preencher REG 568\nSolicitação de NTA Controladoria\nAprovação de preços NTA"}
+        valor={texto}
+        onChange={setTexto}
+      />
+      <CampoCheck
+        descricao="Cada uma começa depois que a anterior terminar. Desmarque para deixar todas no início do fluxo."
+        marcado={encadear}
+        rotulo="Encadear na ordem da lista"
+        onChange={setEncadear}
+      />
+      {titulos.length > 0 && (
+        <p className="text-sm text-muted">
+          {titulos.length} atividade(s) serão adicionadas ao fim do fluxo. O SLA fica vazio (1 dia útil) — ajuste depois
+          na tabela.
+        </p>
+      )}
     </JanelaFormulario>
   );
 }

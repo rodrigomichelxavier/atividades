@@ -1,0 +1,148 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { datasDoFluxo, dependentesDoItem, itensDoModelo } from "./fluxo.ts";
+import { dentroDoIntervalo, intervaloDoPeriodo, subtrairMeses, type Intervalo } from "./periodos.ts";
+import type { ModeloItem } from "./tipos.ts";
+
+const VAZIO: Intervalo = { de: null, ate: null };
+
+function item(id: string, ordem: number, sla: number | null, predecessoras: string[] = []): ModeloItem {
+  return {
+    id,
+    modeloId: "FM-001",
+    ordem,
+    titulo: id,
+    responsavelId: null,
+    prioridade: "Média",
+    slaDiasUteis: sla,
+    predecessoras,
+  };
+}
+
+const todos = (itens: ModeloItem[]) => new Set(itens.map((i) => i.id));
+
+test("item sem predecessora começa no início do fluxo", () => {
+  const itens = [item("I-001", 1, 2)];
+  // 2026-06-01 é uma segunda-feira.
+  const datas = datasDoFluxo(itens, "2026-06-01", todos(itens));
+  assert.deepEqual(datas.get("I-001"), { dataInicio: "2026-06-01", prazo: "2026-06-03" });
+});
+
+test("itens em cadeia começam no dia útil seguinte ao prazo da predecessora", () => {
+  const itens = [item("I-001", 1, 2), item("I-002", 2, 3, ["I-001"])];
+  const datas = datasDoFluxo(itens, "2026-06-01", todos(itens));
+  assert.deepEqual(datas.get("I-001"), { dataInicio: "2026-06-01", prazo: "2026-06-03" });
+  assert.deepEqual(datas.get("I-002"), { dataInicio: "2026-06-04", prazo: "2026-06-09" });
+});
+
+test("itens independentes correm em paralelo, a partir do início do fluxo", () => {
+  const itens = [item("I-001", 1, 2), item("I-002", 2, 5)];
+  const datas = datasDoFluxo(itens, "2026-06-01", todos(itens));
+  assert.equal(datas.get("I-001")!.dataInicio, "2026-06-01");
+  assert.equal(datas.get("I-002")!.dataInicio, "2026-06-01");
+  assert.equal(datas.get("I-002")!.prazo, "2026-06-08");
+});
+
+test("com várias predecessoras, vale a que termina por último", () => {
+  const itens = [item("I-001", 1, 2), item("I-002", 2, 5), item("I-003", 3, 1, ["I-001", "I-002"])];
+  const datas = datasDoFluxo(itens, "2026-06-01", todos(itens));
+  assert.equal(datas.get("I-003")!.dataInicio, "2026-06-09"); // dia útil após 08/06
+  assert.equal(datas.get("I-003")!.prazo, "2026-06-10");
+});
+
+test("a cadeia pula fim de semana", () => {
+  const itens = [item("I-001", 1, 4), item("I-002", 2, 1, ["I-001"])];
+  const datas = datasDoFluxo(itens, "2026-06-01", todos(itens));
+  assert.equal(datas.get("I-001")!.prazo, "2026-06-05"); // sexta
+  assert.equal(datas.get("I-002")!.dataInicio, "2026-06-08"); // segunda, não sábado
+});
+
+test("início de fluxo no fim de semana anda para a segunda", () => {
+  const itens = [item("I-001", 1, 1)];
+  const datas = datasDoFluxo(itens, "2026-06-06", todos(itens)); // sábado
+  assert.equal(datas.get("I-001")!.dataInicio, "2026-06-08");
+});
+
+test("item sem SLA dura um dia útil", () => {
+  const itens = [item("I-001", 1, null)];
+  const datas = datasDoFluxo(itens, "2026-06-01", todos(itens));
+  assert.equal(datas.get("I-001")!.prazo, "2026-06-02");
+});
+
+test("SLA zero vence no próprio dia de início", () => {
+  const itens = [item("I-001", 1, 0), item("I-002", 2, 1, ["I-001"])];
+  const datas = datasDoFluxo(itens, "2026-06-01", todos(itens));
+  assert.equal(datas.get("I-001")!.prazo, "2026-06-01");
+  assert.equal(datas.get("I-002")!.dataInicio, "2026-06-02");
+});
+
+test("item desmarcado sai do resultado e liga a cadeia em quem sobrou", () => {
+  const itens = [item("I-001", 1, 2), item("I-002", 2, 3, ["I-001"]), item("I-003", 3, 1, ["I-002"])];
+  const datas = datasDoFluxo(itens, "2026-06-01", new Set(["I-001", "I-003"]));
+  assert.equal(datas.has("I-002"), false);
+  // I-003 passa a depender de I-001, que vence em 03/06.
+  assert.equal(datas.get("I-003")!.dataInicio, "2026-06-04");
+});
+
+test("desmarcar o primeiro item solta o seguinte no início do fluxo", () => {
+  const itens = [item("I-001", 1, 2), item("I-002", 2, 3, ["I-001"])];
+  const datas = datasDoFluxo(itens, "2026-06-01", new Set(["I-002"]));
+  assert.equal(datas.get("I-002")!.dataInicio, "2026-06-01");
+});
+
+test("predecessora inexistente é ignorada", () => {
+  const itens = [item("I-002", 2, 3, ["I-999"])];
+  const datas = datasDoFluxo(itens, "2026-06-01", todos(itens));
+  assert.equal(datas.get("I-002")!.dataInicio, "2026-06-01");
+});
+
+test("ciclo não trava o cálculo", () => {
+  const itens = [item("I-001", 1, 1, ["I-002"]), item("I-002", 2, 1, ["I-001"])];
+  const datas = datasDoFluxo(itens, "2026-06-01", todos(itens));
+  assert.equal(datas.size, 2);
+});
+
+test("dependentesDoItem pega dependências indiretas", () => {
+  const itens = [item("I-001", 1, 1), item("I-002", 2, 1, ["I-001"]), item("I-003", 3, 1, ["I-002"])];
+  assert.deepEqual([...dependentesDoItem("I-001", itens)].sort(), ["I-002", "I-003"]);
+  assert.deepEqual([...dependentesDoItem("I-003", itens)], []);
+});
+
+test("itensDoModelo filtra por modelo e ordena", () => {
+  const itens = [item("I-002", 2, 1), item("I-001", 1, 1), { ...item("I-003", 0, 1), modeloId: "FM-002" }];
+  assert.deepEqual(
+    itensDoModelo("FM-001", itens).map((i) => i.id),
+    ["I-001", "I-002"],
+  );
+});
+
+test("subtrairMeses não estoura o fim do mês", () => {
+  assert.equal(subtrairMeses("2026-03-31", 1), "2026-02-28");
+  assert.equal(subtrairMeses("2026-01-15", 1), "2025-12-15");
+  assert.equal(subtrairMeses("2026-06-30", 12), "2025-06-30");
+  assert.equal(subtrairMeses("2024-03-30", 1), "2024-02-29"); // ano bissexto
+});
+
+test("intervalos dos períodos", () => {
+  assert.deepEqual(intervaloDoPeriodo("Todo o período", VAZIO, "2026-06-15"), { de: null, ate: null });
+  assert.deepEqual(intervaloDoPeriodo("Últimos 3 meses", VAZIO, "2026-06-15"), {
+    de: "2026-03-15",
+    ate: "2026-06-15",
+  });
+  assert.deepEqual(intervaloDoPeriodo("Este mês", VAZIO, "2026-02-10"), { de: "2026-02-01", ate: "2026-02-28" });
+  assert.deepEqual(intervaloDoPeriodo("Próximos 30 dias", VAZIO, "2026-06-15"), {
+    de: "2026-06-15",
+    ate: "2026-07-15",
+  });
+  const meu = { de: "2026-01-01", ate: "2026-01-31" };
+  assert.deepEqual(intervaloDoPeriodo("Personalizado", meu, "2026-06-15"), meu);
+});
+
+test("data sem valor nunca é filtrada pelo período", () => {
+  const intervalo = { de: "2026-06-01", ate: "2026-06-30" };
+  assert.equal(dentroDoIntervalo(null, intervalo), true);
+  assert.equal(dentroDoIntervalo("2026-06-15", intervalo), true);
+  assert.equal(dentroDoIntervalo("2026-05-31", intervalo), false);
+  assert.equal(dentroDoIntervalo("2026-07-01", intervalo), false);
+  assert.equal(dentroDoIntervalo("2026-07-01", { de: null, ate: null }), true);
+});
