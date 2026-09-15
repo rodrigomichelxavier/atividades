@@ -5,7 +5,7 @@ import {
   dependentesDoItem,
   itensDeTrabalho,
   itensDoModelo,
-  niveisDeDerivacao,
+  estruturaDoFluxo,
   ordenarPorDependencia,
   situacaoAtividade,
 } from "./fluxo.ts";
@@ -176,47 +176,69 @@ test("ordenar não trava com ciclo", () => {
   assert.equal(ordenarPorDependencia(itens).length, 2);
 });
 
-test("cadeia linear fica toda no mesmo nível", () => {
+test("cadeia linear fica toda no caminho principal, sem traço", () => {
   const itens = ordenarPorDependencia([
     item("I-001", 1, 1),
     item("I-002", 2, 1, ["I-001"]),
     item("I-003", 3, 1, ["I-002"]),
   ]);
-  const niveis = niveisDeDerivacao(itens);
-  assert.deepEqual([...niveis.values()], [0, 0, 0]);
+  const estrutura = estruturaDoFluxo(itens);
+  assert.deepEqual([...estrutura.values()], [
+    { nivel: 0, conector: "" },
+    { nivel: 0, conector: "" },
+    { nivel: 0, conector: "" },
+  ]);
 });
 
-test("caminho paralelo a partir da mesma atividade ganha um nível", () => {
+test("irmãs da mesma predecessora ficam no mesmo nível, com traço", () => {
   const itens = ordenarPorDependencia([
     item("I-001", 1, 1),
     item("I-002", 2, 1, ["I-001"]),
     item("I-003", 3, 1, ["I-001"]),
+    item("I-004", 4, 1, ["I-001"]),
   ]);
-  const niveis = niveisDeDerivacao(itens);
-  assert.equal(niveis.get("I-001"), 0);
-  assert.equal(niveis.get("I-002"), 0); // continua a cadeia
-  assert.equal(niveis.get("I-003"), 1); // deriva
+  const estrutura = estruturaDoFluxo(itens);
+  assert.deepEqual(estrutura.get("I-001"), { nivel: 0, conector: "" });
+  assert.deepEqual(estrutura.get("I-002"), { nivel: 1, conector: "meio" });
+  assert.deepEqual(estrutura.get("I-003"), { nivel: 1, conector: "meio" });
+  assert.deepEqual(estrutura.get("I-004"), { nivel: 1, conector: "fim" });
 });
 
-test("junção volta ao nível de fora", () => {
+test("junção fecha o ramo e volta à coluna de fora", () => {
   const itens = ordenarPorDependencia([
     item("I-001", 1, 1),
     item("I-002", 2, 1, ["I-001"]),
     item("I-003", 3, 1, ["I-001"]),
     item("I-004", 4, 1, ["I-002", "I-003"]),
   ]);
-  const niveis = niveisDeDerivacao(itens);
-  assert.equal(niveis.get("I-003"), 1);
-  assert.equal(niveis.get("I-004"), 0);
+  const estrutura = estruturaDoFluxo(itens);
+  assert.equal(estrutura.get("I-002")!.nivel, 1);
+  assert.equal(estrutura.get("I-003")!.nivel, 1);
+  assert.deepEqual(estrutura.get("I-004"), { nivel: 0, conector: "" });
 });
 
-test("item sem predecessora começa no nível zero mesmo no meio da lista", () => {
+test("ramo dentro de ramo desce mais um nível", () => {
+  const itens = ordenarPorDependencia([
+    item("I-001", 1, 1),
+    item("I-002", 2, 1, ["I-001"]),
+    item("I-003", 3, 1, ["I-001"]),
+    item("I-004", 4, 1, ["I-002"]),
+    item("I-005", 5, 1, ["I-002"]),
+  ]);
+  const estrutura = estruturaDoFluxo(itens);
+  assert.equal(estrutura.get("I-002")!.nivel, 1);
+  assert.equal(estrutura.get("I-004")!.nivel, 2);
+  assert.equal(estrutura.get("I-005")!.nivel, 2);
+  assert.equal(estrutura.get("I-005")!.conector, "fim");
+});
+
+test("quem não depende de ninguém fica no caminho principal", () => {
   const itens = ordenarPorDependencia([
     item("I-001", 1, 1),
     item("I-002", 2, 1, ["I-001"]),
     item("I-003", 3, 1),
   ]);
-  assert.equal(niveisDeDerivacao(itens).get("I-003"), 0);
+  assert.deepEqual(estruturaDoFluxo(itens).get("I-003"), { nivel: 0, conector: "" });
 });
 
 test("o ramo fica junto: quem deriva vem logo depois, antes dos independentes", () => {

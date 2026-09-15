@@ -247,42 +247,71 @@ export function ordenarPorDependencia(itens: ModeloItem[]): ModeloItem[] {
   return resultado;
 }
 
+/** Como uma atividade se encaixa no desenho do fluxo. */
+export interface Derivacao {
+  /** Quantas colunas de indentação. Zero é o caminho principal. */
+  nivel: number;
+  /** Traço de ramificação: vazio quando a atividade segue sozinha. */
+  conector: "" | "meio" | "fim";
+}
+
 /**
- * Nível de indentação de cada item, para a lista mostrar as derivações.
+ * Desenho do encadeamento: a indentação marca **caminhos paralelos**, não a
+ * profundidade da cadeia.
  *
- * Uma cadeia linear fica toda no mesmo nível — indentar a cada passo jogaria um
- * fluxo de 35 atividades para fora da tela. O nível só aumenta quando uma
- * atividade abre um caminho paralelo a partir de outra que já tem continuação,
- * e volta ao nível de origem quando os caminhos se juntam.
+ * Quem segue sozinho continua na mesma coluna — um fluxo de 35 atividades em
+ * sequência sairia da tela se cada passo indentasse. Quando duas ou mais
+ * atividades saem da mesma predecessora, todas descem um nível juntas, com o
+ * traço de ramificação, para se lerem como irmãs. Uma atividade que espera
+ * várias volta para a coluna mais externa entre elas, fechando o ramo.
  *
  * Espera os itens já ordenados por `ordenarPorDependencia`.
  */
-export function niveisDeDerivacao(itens: ModeloItem[]): Map<string, number> {
+export function estruturaDoFluxo(itens: ModeloItem[]): Map<string, Derivacao> {
   const posicao = new Map(itens.map((i, indice) => [i.id, indice]));
+  const anteriores = (item: ModeloItem) =>
+    item.predecessoras.filter((p) => posicao.has(p) && posicao.get(p)! < posicao.get(item.id)!);
+
+  // Só quem tem uma predecessora entra como filho dela; uma junção fecha ramo.
+  const filhos = new Map<string, string[]>();
+  for (const item of itens) {
+    const de = anteriores(item);
+    if (de.length === 1) filhos.set(de[0], [...(filhos.get(de[0]) ?? []), item.id]);
+  }
+
   const niveis = new Map<string, number>();
-  const comContinuacao = new Set<string>();
+  // Onde o ramo de cada atividade começou: é para lá que uma junção volta.
+  const origens = new Map<string, number>();
+  const estrutura = new Map<string, Derivacao>();
 
   for (const item of itens) {
-    const predecessoras = item.predecessoras.filter((p) => posicao.has(p) && posicao.get(p)! < posicao.get(item.id)!);
-    if (predecessoras.length === 0) {
-      niveis.set(item.id, 0);
-      continue;
+    const de = anteriores(item);
+    let nivel = 0;
+    let origem = 0;
+    let conector: Derivacao["conector"] = "";
+
+    if (de.length > 1) {
+      nivel = Math.min(...de.map((p) => origens.get(p) ?? 0));
+      origem = nivel;
+    } else if (de.length === 1) {
+      const pai = de[0];
+      const nivelPai = niveis.get(pai) ?? 0;
+      const irmaos = filhos.get(pai) ?? [];
+      if (irmaos.length > 1) {
+        nivel = nivelPai + 1;
+        origem = nivelPai;
+        conector = irmaos[irmaos.length - 1] === item.id ? "fim" : "meio";
+      } else {
+        nivel = nivelPai;
+        origem = origens.get(pai) ?? 0;
+      }
     }
-    if (predecessoras.length > 1) {
-      // Junção: volta para o caminho mais externo entre os que chegam aqui.
-      niveis.set(item.id, Math.min(...predecessoras.map((p) => niveis.get(p) ?? 0)));
-      continue;
-    }
-    const pai = predecessoras[0];
-    const nivelPai = niveis.get(pai) ?? 0;
-    if (comContinuacao.has(pai)) {
-      niveis.set(item.id, nivelPai + 1);
-    } else {
-      comContinuacao.add(pai);
-      niveis.set(item.id, nivelPai);
-    }
+
+    niveis.set(item.id, nivel);
+    origens.set(item.id, origem);
+    estrutura.set(item.id, { nivel, conector });
   }
-  return niveis;
+  return estrutura;
 }
 
 // ---------- Itens de trabalho (o que o painel conta) ----------
