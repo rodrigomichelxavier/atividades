@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { datasDoFluxo, dependentesDoItem, itensDoModelo } from "./fluxo.ts";
+import {
+  datasDoFluxo,
+  dependentesDoItem,
+  itensDoModelo,
+  niveisDeDerivacao,
+  ordenarPorDependencia,
+} from "./fluxo.ts";
 import { dentroDoIntervalo, intervaloDoPeriodo, subtrairMeses, type Intervalo } from "./periodos.ts";
 import type { ModeloItem } from "./tipos.ts";
 
@@ -145,4 +151,94 @@ test("data sem valor nunca é filtrada pelo período", () => {
   assert.equal(dentroDoIntervalo("2026-05-31", intervalo), false);
   assert.equal(dentroDoIntervalo("2026-07-01", intervalo), false);
   assert.equal(dentroDoIntervalo("2026-07-01", { de: null, ate: null }), true);
+});
+
+test("ordenar por dependência põe cada item depois das predecessoras", () => {
+  const itens = [item("I-001", 1, 1, ["I-003"]), item("I-002", 2, 1), item("I-003", 3, 1, ["I-002"])];
+  assert.deepEqual(
+    ordenarPorDependencia(itens).map((i) => i.id),
+    ["I-002", "I-003", "I-001"],
+  );
+});
+
+test("ordenar preserva a ordem de quem não depende de ninguém", () => {
+  const itens = [item("I-001", 1, 1), item("I-002", 2, 1), item("I-003", 3, 1)];
+  assert.deepEqual(
+    ordenarPorDependencia(itens).map((i) => i.id),
+    ["I-001", "I-002", "I-003"],
+  );
+});
+
+test("ordenar não trava com ciclo", () => {
+  const itens = [item("I-001", 1, 1, ["I-002"]), item("I-002", 2, 1, ["I-001"])];
+  assert.equal(ordenarPorDependencia(itens).length, 2);
+});
+
+test("cadeia linear fica toda no mesmo nível", () => {
+  const itens = ordenarPorDependencia([
+    item("I-001", 1, 1),
+    item("I-002", 2, 1, ["I-001"]),
+    item("I-003", 3, 1, ["I-002"]),
+  ]);
+  const niveis = niveisDeDerivacao(itens);
+  assert.deepEqual([...niveis.values()], [0, 0, 0]);
+});
+
+test("caminho paralelo a partir da mesma atividade ganha um nível", () => {
+  const itens = ordenarPorDependencia([
+    item("I-001", 1, 1),
+    item("I-002", 2, 1, ["I-001"]),
+    item("I-003", 3, 1, ["I-001"]),
+  ]);
+  const niveis = niveisDeDerivacao(itens);
+  assert.equal(niveis.get("I-001"), 0);
+  assert.equal(niveis.get("I-002"), 0); // continua a cadeia
+  assert.equal(niveis.get("I-003"), 1); // deriva
+});
+
+test("junção volta ao nível de fora", () => {
+  const itens = ordenarPorDependencia([
+    item("I-001", 1, 1),
+    item("I-002", 2, 1, ["I-001"]),
+    item("I-003", 3, 1, ["I-001"]),
+    item("I-004", 4, 1, ["I-002", "I-003"]),
+  ]);
+  const niveis = niveisDeDerivacao(itens);
+  assert.equal(niveis.get("I-003"), 1);
+  assert.equal(niveis.get("I-004"), 0);
+});
+
+test("item sem predecessora começa no nível zero mesmo no meio da lista", () => {
+  const itens = ordenarPorDependencia([
+    item("I-001", 1, 1),
+    item("I-002", 2, 1, ["I-001"]),
+    item("I-003", 3, 1),
+  ]);
+  assert.equal(niveisDeDerivacao(itens).get("I-003"), 0);
+});
+
+test("o ramo fica junto: quem deriva vem logo depois, antes dos independentes", () => {
+  const itens = [
+    item("I-001", 1, 1),
+    item("I-002", 2, 1),
+    item("I-003", 3, 1, ["I-002"]),
+    item("I-004", 4, 1),
+    item("I-005", 5, 1, ["I-002"]),
+  ];
+  assert.deepEqual(
+    ordenarPorDependencia(itens).map((i) => i.id),
+    ["I-001", "I-002", "I-003", "I-005", "I-004"],
+  );
+});
+
+test("junção só entra depois da última predecessora", () => {
+  const itens = [
+    item("I-001", 1, 1),
+    item("I-002", 2, 1, ["I-001"]),
+    item("I-003", 3, 1, ["I-001", "I-004"]),
+    item("I-004", 4, 1),
+  ];
+  const ordem = ordenarPorDependencia(itens).map((i) => i.id);
+  assert.ok(ordem.indexOf("I-003") > ordem.indexOf("I-004"), ordem.join(","));
+  assert.ok(ordem.indexOf("I-003") > ordem.indexOf("I-001"), ordem.join(","));
 });

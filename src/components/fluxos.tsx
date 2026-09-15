@@ -13,28 +13,48 @@ import {
   TrashBin,
 } from "@gravity-ui/icons";
 import { Button, Card, ProgressBar, Table, Tooltip, toast } from "@heroui/react";
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { hoje } from "@/lib/datas";
-import { atividadesDoFluxo, datasDoFluxo, itensDoModelo, progressoFluxo } from "@/lib/fluxo";
+import {
+  atividadesDoFluxo,
+  datasDoFluxo,
+  dependentesDoItem,
+  itensDoModelo,
+  niveisDeDerivacao,
+  progressoFluxo,
+} from "@/lib/fluxo";
 import {
   excluirFluxo,
   excluirModelo,
   excluirModeloItem,
   iniciarFluxo,
   moverModeloItem,
+  ordenarModeloPorDependencia,
+  salvarModeloItem,
   type AtividadePlanejada,
 } from "@/lib/operacoes";
 import { useDados } from "@/lib/store";
-import type { Fluxo, FluxoModelo, ModeloItem, Prioridade } from "@/lib/tipos";
 import {
+  PRIORIDADES,
+  type Fluxo,
+  type FluxoModelo,
+  type ModeloItem,
+  type Pessoa,
+  type Prioridade,
+} from "@/lib/tipos";
+import {
+  BotaoCampo,
   CampoCheck,
+  CampoMultiplo,
   CampoSelecao,
+  CampoSelecaoLinha,
   CampoTexto,
-  ChipPrioridade,
+  CampoTextoLinha,
   ChipStatus,
   ConfirmarExclusao,
   DataTexto,
   nomePessoa,
+  opcoesDe,
   opcoesPessoas,
   Vazio,
 } from "./comum";
@@ -298,8 +318,19 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
   const [form, setForm] = useState<ModeloItem | "novo" | null>(null);
   const [colando, setColando] = useState(false);
   const [excluindo, setExcluindo] = useState<ModeloItem | null>(null);
-  const itens = itensDoModelo(modelo.id, dados.modeloItens);
-  const titulos = new Map(itens.map((i) => [i.id, i.titulo]));
+  const itens = useMemo(() => itensDoModelo(modelo.id, dados.modeloItens), [modelo.id, dados.modeloItens]);
+  const niveis = useMemo(() => niveisDeDerivacao(itens), [itens]);
+
+  // Cada campo grava direto: a edição acontece na própria linha, sem modal. Ao
+  // mudar dependências a lista se reordena, para a derivação ficar visível.
+  const salvar = useCallback(
+    (item: ModeloItem) => alterar((d) => ordenarModeloPorDependencia(salvarModeloItem(d, item), item.modeloId)),
+    [alterar],
+  );
+  const mover = useCallback(
+    (id: string, direcao: -1 | 1) => alterar((d) => moverModeloItem(d, id, direcao)),
+    [alterar],
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -315,6 +346,10 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
           <h2 className="text-xl font-semibold">{modelo.nome}</h2>
           <p className="text-sm text-muted">
             {modelo.descricao || "As atividades abaixo viram atividades de verdade quando o fluxo é iniciado."}
+          </p>
+          <p className="text-xs text-muted">
+            Edite direto na linha: o campo salva ao sair dele ou no Enter. Ao definir uma dependência, a atividade se
+            reposiciona depois da que ela espera.
           </p>
         </div>
         <div className="flex gap-2">
@@ -348,83 +383,35 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
           titulo="Fluxo padrão vazio"
         />
       ) : (
-        <Table>
-          <Table.ScrollContainer>
-            <Table.Content aria-label="Atividades do fluxo padrão" className="min-w-[900px]">
-              <Table.Header>
-                <Table.Column className="w-12">#</Table.Column>
-                <Table.Column isRowHeader>Atividade</Table.Column>
-                <Table.Column>Responsável padrão</Table.Column>
-                <Table.Column>Prioridade</Table.Column>
-                <Table.Column>SLA</Table.Column>
-                <Table.Column>Depende de</Table.Column>
-                <Table.Column className="text-end">Ações</Table.Column>
-              </Table.Header>
-              <Table.Body>
-                {itens.map((item, indice) => (
-                  <Table.Row key={item.id} id={item.id}>
-                    <Table.Cell className="text-muted tabular-nums">{indice + 1}</Table.Cell>
-                    <Table.Cell className="font-medium">{item.titulo}</Table.Cell>
-                    <Table.Cell>{nomePessoa(dados.pessoas, item.responsavelId)}</Table.Cell>
-                    <Table.Cell>
-                      <ChipPrioridade prioridade={item.prioridade} />
-                    </Table.Cell>
-                    <Table.Cell className="whitespace-nowrap">
-                      {item.slaDiasUteis == null ? "1 d.u." : `${item.slaDiasUteis} d.u.`}
-                    </Table.Cell>
-                    <Table.Cell className="text-sm text-muted">
-                      {item.predecessoras.length === 0
-                        ? "Início do fluxo"
-                        : item.predecessoras.map((id) => titulos.get(id) ?? id).join(", ")}
-                    </Table.Cell>
-                    <Table.Cell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          isIconOnly
-                          aria-label="Mover para cima"
-                          isDisabled={indice === 0}
-                          size="sm"
-                          variant="ghost"
-                          onPress={() => alterar((d) => moverModeloItem(d, item.id, -1))}
-                        >
-                          <ArrowUp />
-                        </Button>
-                        <Button
-                          isIconOnly
-                          aria-label="Mover para baixo"
-                          isDisabled={indice === itens.length - 1}
-                          size="sm"
-                          variant="ghost"
-                          onPress={() => alterar((d) => moverModeloItem(d, item.id, 1))}
-                        >
-                          <ArrowDown />
-                        </Button>
-                        <Button
-                          isIconOnly
-                          aria-label="Editar atividade"
-                          size="sm"
-                          variant="ghost"
-                          onPress={() => setForm(item)}
-                        >
-                          <Pencil />
-                        </Button>
-                        <Button
-                          isIconOnly
-                          aria-label="Excluir atividade"
-                          size="sm"
-                          variant="ghost"
-                          onPress={() => setExcluindo(item)}
-                        >
-                          <TrashBin />
-                        </Button>
-                      </div>
-                    </Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table.Content>
-          </Table.ScrollContainer>
-        </Table>
+        // Grid em vez de tabela: são 35 linhas de campos editáveis, e o componente
+        // de tabela refaz a coleção inteira a cada tecla confirmada.
+        <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
+          <div className="min-w-[1180px]">
+            <div className={`${COLUNAS_MODELO} border-b border-border px-3 py-2 text-xs font-medium text-muted`}>
+              <span>#</span>
+              <span>Atividade</span>
+              <span>Responsável padrão</span>
+              <span>Prioridade</span>
+              <span>SLA (d.u.)</span>
+              <span>Depende de</span>
+              <span className="text-end">Ações</span>
+            </div>
+            {itens.map((item, indice) => (
+              <LinhaModelo
+                key={item.id}
+                indice={indice}
+                item={item}
+                itens={itens}
+                nivel={niveis.get(item.id) ?? 0}
+                pessoas={dados.pessoas}
+                todosItens={dados.modeloItens}
+                onExcluir={setExcluindo}
+                onMover={mover}
+                onSalvar={salvar}
+              />
+            ))}
+          </div>
+        </div>
       )}
 
       {form && (
@@ -444,6 +431,151 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
     </div>
   );
 }
+
+/** Além disso a indentação para de crescer, senão o campo some da tela. */
+const NIVEL_MAXIMO = 6;
+
+const COLUNAS_MODELO =
+  "grid grid-cols-[2.5rem_minmax(0,1.7fr)_minmax(0,1.1fr)_8.5rem_6rem_minmax(0,1.2fr)_6.5rem] items-center gap-3";
+
+/**
+ * Uma atividade do fluxo padrão, editável na própria linha. Memorizada para que
+ * salvar um campo não redesenhe as outras linhas — um fluxo tem dezenas delas.
+ */
+const LinhaModelo = memo(function LinhaModelo({
+  item,
+  indice,
+  itens,
+  nivel,
+  todosItens,
+  pessoas,
+  onSalvar,
+  onMover,
+  onExcluir,
+}: {
+  item: ModeloItem;
+  indice: number;
+  itens: ModeloItem[];
+  /** Profundidade da derivação, para indentar a linha. */
+  nivel: number;
+  todosItens: ModeloItem[];
+  pessoas: Pessoa[];
+  onSalvar: (item: ModeloItem) => void;
+  onMover: (id: string, direcao: -1 | 1) => void;
+  onExcluir: (item: ModeloItem) => void;
+}) {
+  const [editandoDependencia, setEditandoDependencia] = useState(false);
+
+  // Não pode depender de si mesma nem de quem já depende dela (evita ciclos).
+  const bloqueadas = dependentesDoItem(item.id, todosItens);
+  const opcoesPredecessoras = itens
+    .filter((i) => i.id !== item.id && !bloqueadas.has(i.id))
+    .map((i) => ({ id: i.id, rotulo: i.titulo }));
+  const predecessorasValidas = item.predecessoras.filter((id) => opcoesPredecessoras.some((o) => o.id === id));
+
+  return (
+    <div className={`${COLUNAS_MODELO} border-b border-border px-3 py-2 last:border-b-0`}>
+      <span className="text-sm text-muted tabular-nums">{indice + 1}</span>
+      <div className="flex min-w-0 items-center gap-1">
+        {/* Indentação da derivação, limitada para não empurrar o campo para fora. */}
+        <span aria-hidden className="shrink-0" style={{ width: Math.min(nivel, NIVEL_MAXIMO) * 14 }} />
+        {predecessorasValidas.length > 0 && (
+          <span aria-hidden className="shrink-0 text-muted" title="Depende de outra atividade">
+            ↳
+          </span>
+        )}
+        <CampoTextoLinha
+          exigeValor
+          label={`Nome da atividade ${indice + 1}`}
+          valor={item.titulo}
+          onConfirmar={(v) => onSalvar({ ...item, titulo: v })}
+        />
+      </div>
+      <CampoSelecaoLinha
+        label={`Responsável padrão de ${item.titulo}`}
+        opcoes={opcoesPessoas(pessoas)}
+        permitirVazio="Sem responsável"
+        valor={item.responsavelId}
+        onChange={(v) => onSalvar({ ...item, responsavelId: v })}
+      />
+      <CampoSelecaoLinha
+        label={`Prioridade de ${item.titulo}`}
+        opcoes={opcoesDe(PRIORIDADES)}
+        valor={item.prioridade}
+        onChange={(v) => v && onSalvar({ ...item, prioridade: v as Prioridade })}
+      />
+      <CampoTextoLinha
+        label={`SLA em dias úteis de ${item.titulo}`}
+        placeholder="1"
+        tipo="number"
+        valor={item.slaDiasUteis == null ? "" : String(item.slaDiasUteis)}
+        onConfirmar={(v) =>
+          onSalvar({ ...item, slaDiasUteis: v === "" ? null : Math.max(0, Math.floor(Number(v) || 0)) })
+        }
+      />
+      {/* O campo rico só é montado na linha em que se clica: dezenas deles na
+          mesma tela deixam a digitação lenta. */}
+      {editandoDependencia ? (
+        <CampoMultiplo
+          autoAbrir
+          labelOculto
+          label={`Depende de, para ${item.titulo}`}
+          opcoes={opcoesPredecessoras}
+          placeholder="Início do fluxo"
+          valores={item.predecessoras.filter((id) => opcoesPredecessoras.some((o) => o.id === id))}
+          onChange={(v) => onSalvar({ ...item, predecessoras: v })}
+        />
+      ) : (
+        <BotaoCampo
+          desabilitado={opcoesPredecessoras.length === 0}
+          rotulo={
+            predecessorasValidas.length === 0
+              ? "Início do fluxo"
+              : predecessorasValidas.map((id) => itens.find((i) => i.id === id)?.titulo ?? id).join(", ")
+          }
+          titulo={
+            opcoesPredecessoras.length === 0
+              ? "Não há de quem depender: as outras atividades do fluxo já dependem desta."
+              : undefined
+          }
+          vazio={predecessorasValidas.length === 0}
+          onPress={() => setEditandoDependencia(true)}
+        />
+      )}
+      <div className="flex justify-end gap-1">
+        <Button
+          isIconOnly
+          aria-label={`Mover ${item.titulo} para cima`}
+          isDisabled={indice === 0}
+          size="sm"
+          variant="ghost"
+          onPress={() => onMover(item.id, -1)}
+        >
+          <ArrowUp />
+        </Button>
+        <Button
+          isIconOnly
+          aria-label={`Mover ${item.titulo} para baixo`}
+          isDisabled={indice === itens.length - 1}
+          size="sm"
+          variant="ghost"
+          onPress={() => onMover(item.id, 1)}
+        >
+          <ArrowDown />
+        </Button>
+        <Button
+          isIconOnly
+          aria-label={`Excluir ${item.titulo}`}
+          size="sm"
+          variant="ghost"
+          onPress={() => onExcluir(item)}
+        >
+          <TrashBin />
+        </Button>
+      </div>
+    </div>
+  );
+});
 
 // ---------- Iniciar ----------
 
@@ -469,6 +601,7 @@ function IniciarFluxo({
 }) {
   const { dados, alterar } = useDados();
   const itens = useMemo(() => itensDoModelo(modelo.id, dados.modeloItens), [modelo.id, dados.modeloItens]);
+  const niveis = useMemo(() => niveisDeDerivacao(itens), [itens]);
   const [nome, setNome] = useState(modelo.nome);
   const [dataInicio, setDataInicio] = useState(hoje());
   const [linhas, setLinhas] = useState<Record<string, LinhaPlano>>(() =>
@@ -618,7 +751,11 @@ function IniciarFluxo({
                       />
                     </Table.Cell>
                     <Table.Cell>
-                      <span className="block font-medium">
+                      <span
+                        className="block font-medium"
+                        style={{ paddingInlineStart: Math.min(niveis.get(item.id) ?? 0, NIVEL_MAXIMO) * 14 }}
+                      >
+                        {(niveis.get(item.id) ?? 0) > 0 && <span className="text-muted">↳ </span>}
                         {indice + 1}. {item.titulo}
                       </span>
                       {item.predecessoras.length > 0 && (

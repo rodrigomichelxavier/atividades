@@ -458,7 +458,7 @@ export function FormModeloItem({
 export function FormModeloLote({ modeloId, onFechar }: { modeloId: string; onFechar: () => void }) {
   const { alterar } = useDados();
   const [texto, setTexto] = useState("");
-  const [encadear, setEncadear] = useState(true);
+  const [encadear, setEncadear] = useState(false);
 
   const titulos = texto
     .split("\n")
@@ -508,15 +508,15 @@ export function FormModeloLote({ modeloId, onFechar }: { modeloId: string; onFec
         onChange={setTexto}
       />
       <CampoCheck
-        descricao="Cada uma começa depois que a anterior terminar. Desmarque para deixar todas no início do fluxo."
+        descricao="Cada uma passa a começar depois que a anterior terminar. Deixe desmarcado para definir as dependências você mesmo, uma a uma."
         marcado={encadear}
-        rotulo="Encadear na ordem da lista"
+        rotulo="Já encadear na ordem da lista"
         onChange={setEncadear}
       />
       {titulos.length > 0 && (
         <p className="text-sm text-muted">
-          {titulos.length} atividade(s) serão adicionadas ao fim do fluxo. O SLA fica vazio (1 dia útil) — ajuste depois
-          na tabela.
+          {titulos.length} atividade(s) serão adicionadas ao fim do fluxo, {encadear ? "encadeadas na ordem" : "sem dependência entre elas"}. O SLA
+          fica vazio (1 dia útil) — ajuste depois na lista.
         </p>
       )}
     </JanelaFormulario>

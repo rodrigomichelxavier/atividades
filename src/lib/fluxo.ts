@@ -209,3 +209,78 @@ export function datasDoFluxo(
   }
   return datas;
 }
+
+/**
+ * Ordena os itens seguindo as derivações: cada atividade vem logo depois da que
+ * ela espera, com o ramo inteiro junto, e quem não depende de ninguém entra na
+ * ordem atual. Uma atividade com várias predecessoras só entra depois da última.
+ */
+export function ordenarPorDependencia(itens: ModeloItem[]): ModeloItem[] {
+  const existentes = new Set(itens.map((i) => i.id));
+  const naOrdem = [...itens].sort((a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id));
+  const colocados = new Set<string>();
+  const resultado: ModeloItem[] = [];
+
+  const pendentes = (item: ModeloItem) =>
+    item.predecessoras.filter((p) => existentes.has(p) && !colocados.has(p));
+
+  function emitir(item: ModeloItem) {
+    resultado.push(item);
+    colocados.add(item.id);
+    // Logo em seguida, os ramos que saem desta atividade.
+    for (const filho of naOrdem) {
+      if (!colocados.has(filho.id) && filho.predecessoras.includes(item.id) && pendentes(filho).length === 0) {
+        emitir(filho);
+      }
+    }
+  }
+
+  let restam = naOrdem.length;
+  while (colocados.size < restam) {
+    const proximo = naOrdem.find((i) => !colocados.has(i.id) && pendentes(i).length === 0);
+    // Nenhum pronto significa ciclo (a configuração impede): segue pela ordem atual.
+    const escolhido = proximo ?? naOrdem.find((i) => !colocados.has(i.id));
+    if (!escolhido) break;
+    emitir(escolhido);
+    restam = naOrdem.length;
+  }
+  return resultado;
+}
+
+/**
+ * Nível de indentação de cada item, para a lista mostrar as derivações.
+ *
+ * Uma cadeia linear fica toda no mesmo nível — indentar a cada passo jogaria um
+ * fluxo de 35 atividades para fora da tela. O nível só aumenta quando uma
+ * atividade abre um caminho paralelo a partir de outra que já tem continuação,
+ * e volta ao nível de origem quando os caminhos se juntam.
+ *
+ * Espera os itens já ordenados por `ordenarPorDependencia`.
+ */
+export function niveisDeDerivacao(itens: ModeloItem[]): Map<string, number> {
+  const posicao = new Map(itens.map((i, indice) => [i.id, indice]));
+  const niveis = new Map<string, number>();
+  const comContinuacao = new Set<string>();
+
+  for (const item of itens) {
+    const predecessoras = item.predecessoras.filter((p) => posicao.has(p) && posicao.get(p)! < posicao.get(item.id)!);
+    if (predecessoras.length === 0) {
+      niveis.set(item.id, 0);
+      continue;
+    }
+    if (predecessoras.length > 1) {
+      // Junção: volta para o caminho mais externo entre os que chegam aqui.
+      niveis.set(item.id, Math.min(...predecessoras.map((p) => niveis.get(p) ?? 0)));
+      continue;
+    }
+    const pai = predecessoras[0];
+    const nivelPai = niveis.get(pai) ?? 0;
+    if (comContinuacao.has(pai)) {
+      niveis.set(item.id, nivelPai + 1);
+    } else {
+      comContinuacao.add(pai);
+      niveis.set(item.id, nivelPai);
+    }
+  }
+  return niveis;
+}
