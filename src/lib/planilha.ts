@@ -30,6 +30,7 @@ const COLUNAS = {
     "Status",
     "Data início",
     "Prazo",
+    "Data conclusão",
     "Criada em",
     "Fluxo (ID)",
     "Ordem",
@@ -74,7 +75,7 @@ type Aba = keyof typeof COLUNAS;
 const ABAS_OBRIGATORIAS = ["Pessoas", "Atividades", "Etapas"] as const satisfies readonly Aba[];
 
 const COLUNAS_OPCIONAIS: Partial<Record<Aba, readonly string[]>> = {
-  Atividades: ["Fluxo (ID)", "Ordem", "SLA (dias úteis)", "Predecessoras"],
+  Atividades: ["Data conclusão", "Fluxo (ID)", "Ordem", "SLA (dias úteis)", "Predecessoras"],
 };
 
 type Celula = string | number | boolean | Date | null;
@@ -144,6 +145,7 @@ export function gerarPlanilha(dados: Dados): ArrayBuffer {
         a.status,
         celulaData(a.dataInicio),
         celulaData(a.prazo),
+        celulaData(a.dataConclusao),
         celulaData(a.criadaEm),
         a.fluxoId,
         a.fluxoId ? a.ordem : null,
@@ -512,6 +514,7 @@ export function lerPlanilha(conteudo: ArrayBuffer): ResultadoLeitura {
       status: atividadesL.opcao(linha, "Status", STATUS, "A fazer", i),
       dataInicio: atividadesL.data(linha, "Data início", i),
       prazo: atividadesL.data(linha, "Prazo", i),
+      dataConclusao: atividadesL.data(linha, "Data conclusão", i),
       criadaEm: atividadesL.data(linha, "Criada em", i) ?? hojeISO(),
       fluxoId: fluxo,
       ordem: (fluxo && atividadesL.inteiro(linha, "Ordem", i)) || 0,

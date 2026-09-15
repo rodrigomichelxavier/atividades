@@ -103,12 +103,19 @@ export function mudarStatusEtapa(dados: Dados, id: string, status: Status): Resu
   return { ok: true, dados: salvarEtapa(dados, aplicarStatusEtapa(etapa, status)) };
 }
 
+/** Ajusta datas de acordo com a mudança de status, como nas etapas. */
+export function aplicarStatusAtividade(atividade: Atividade, status: Status, dataHoje = hoje()): Atividade {
+  const nova = { ...atividade, status };
+  if (status !== "A fazer") nova.dataInicio ??= dataHoje;
+  if (status === "Concluída") nova.dataConclusao ??= dataHoje;
+  else nova.dataConclusao = null;
+  return nova;
+}
+
 export function mudarStatusAtividade(dados: Dados, id: string, status: Status): Dados {
   const atividade = dados.atividades.find((a) => a.id === id);
   if (!atividade) return dados;
-  const nova = { ...atividade, status };
-  if (status !== "A fazer") nova.dataInicio ??= hoje();
-  return salvarAtividade(dados, nova);
+  return salvarAtividade(dados, aplicarStatusAtividade(atividade, status));
 }
 
 // ---------- Fluxos de trabalho ----------
@@ -211,6 +218,7 @@ export function iniciarFluxo(
     status: "A fazer",
     dataInicio: planejada.dataInicio,
     prazo: planejada.prazo,
+    dataConclusao: null,
     criadaEm: dataHoje,
     fluxoId,
     ordem: indice + 1,

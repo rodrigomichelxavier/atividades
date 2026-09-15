@@ -16,7 +16,7 @@ Gestão pessoal de atividades e fluxos de trabalho.
 
 | Aba | Conteúdo |
 | --- | --- |
-| Atividades | ID, título, descrição, responsável, prioridade, status, início, prazo, criada em, fluxo, ordem, SLA (dias úteis), predecessoras |
+| Atividades | ID, título, descrição, responsável, prioridade, status, início, prazo, conclusão, criada em, fluxo, ordem, SLA (dias úteis), predecessoras |
 | Etapas | ID, atividade, ordem, etapa, responsável, status, início, prazo, SLA (dias úteis), predecessoras, conclusão, observações |
 | Fluxos | ID, modelo, nome, data de início — um por fluxo de trabalho iniciado |
 | Fluxos modelo | ID, nome, descrição — os fluxos padrão |
@@ -34,6 +34,7 @@ Planilhas criadas antes dos fluxos continuam funcionando: as abas e colunas nova
 - As datas sugeridas seguem as dependências: uma atividade sem predecessora começa no início do fluxo; com predecessora, começa no primeiro dia útil depois que a última delas vence. Desmarcar uma atividade no meio religa a cadeia em quem sobrou.
 - Depois de iniciado, as datas ficam como estão: atrasos não empurram as seguintes automaticamente — edite a atividade quando precisar.
 - Na lista e no Kanban, o filtro **Origem** separa atividades de rotina, de fluxo, ou de um fluxo específico.
+- Concluir uma atividade preenche a **data de conclusão** com o dia de hoje, se estiver vazia — é dela que saem os indicadores de prazo cumprido.
 
 ### Regras das etapas
 
@@ -41,6 +42,10 @@ Planilhas criadas antes dos fluxos continuam funcionando: as abas e colunas nova
 - O **prazo** da etapa é o prazo manual, se preenchido; senão, o calculado pelo SLA.
 - Uma etapa só pode ser **iniciada ou concluída** depois que todas as predecessoras estiverem concluídas.
 - Iniciar ou concluir uma etapa preenche as datas com o dia de hoje, se estiverem vazias.
+
+### Painel
+
+Os indicadores contam **o que está na ponta do trabalho**: a etapa, quando a atividade tem etapas, e a própria atividade quando não tem. Assim nada é contado duas vezes, seja você detalhando atividades em etapas ou tocando as atividades de um fluxo.
 
 > ⚠️ Este repositório é público. **Nunca faça commit de planilhas com dados reais** — o `.gitignore` já bloqueia `.xlsx` e `.csv`.
 
