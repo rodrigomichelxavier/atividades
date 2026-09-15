@@ -3,12 +3,14 @@ import test from "node:test";
 import {
   datasDoFluxo,
   dependentesDoItem,
+  itensDeTrabalho,
   itensDoModelo,
   niveisDeDerivacao,
   ordenarPorDependencia,
+  situacaoAtividade,
 } from "./fluxo.ts";
 import { dentroDoIntervalo, intervaloDoPeriodo, subtrairMeses, type Intervalo } from "./periodos.ts";
-import type { ModeloItem } from "./tipos.ts";
+import type { Atividade, Etapa, ModeloItem } from "./tipos.ts";
 
 const VAZIO: Intervalo = { de: null, ate: null };
 
@@ -241,4 +243,85 @@ test("junção só entra depois da última predecessora", () => {
   const ordem = ordenarPorDependencia(itens).map((i) => i.id);
   assert.ok(ordem.indexOf("I-003") > ordem.indexOf("I-004"), ordem.join(","));
   assert.ok(ordem.indexOf("I-003") > ordem.indexOf("I-001"), ordem.join(","));
+});
+
+// ---------- Painel: itens de trabalho ----------
+
+function atividade(parcial: Partial<Atividade>): Atividade {
+  return {
+    id: "A-001",
+    titulo: "Atividade",
+    descricao: "",
+    responsavelId: null,
+    prioridade: "Média",
+    status: "A fazer",
+    dataInicio: null,
+    prazo: null,
+    dataConclusao: null,
+    criadaEm: "2026-06-01",
+    fluxoId: null,
+    ordem: 0,
+    slaDiasUteis: null,
+    predecessoras: [],
+    ...parcial,
+  };
+}
+
+function etapa(parcial: Partial<Etapa>): Etapa {
+  return {
+    id: "E-001",
+    atividadeId: "A-001",
+    ordem: 1,
+    titulo: "Etapa",
+    responsavelId: null,
+    status: "A fazer",
+    dataInicio: null,
+    prazo: null,
+    slaDiasUteis: null,
+    predecessoras: [],
+    dataConclusao: null,
+    observacoes: "",
+    ...parcial,
+  };
+}
+
+test("atividade sem etapas conta como item de trabalho", () => {
+  const a = atividade({ id: "A-001", responsavelId: "P-001", status: "Concluída", dataConclusao: "2026-06-10" });
+  const itens = itensDeTrabalho([a], [], "2026-06-15");
+  assert.equal(itens.length, 1);
+  assert.equal(itens[0].responsavelId, "P-001");
+  assert.equal(itens[0].dataConclusao, "2026-06-10");
+});
+
+test("atividade com etapas é representada pelas etapas, sem contar duas vezes", () => {
+  const a = atividade({ id: "A-001" });
+  const b = atividade({ id: "A-002", titulo: "Sozinha" });
+  const itens = itensDeTrabalho([a, b], [etapa({ id: "E-001", atividadeId: "A-001" })], "2026-06-15");
+  assert.deepEqual(itens.map((i) => i.id).sort(), ["A-002", "E-001"]);
+  assert.equal(itens.find((i) => i.id === "E-001")!.contexto, "Atividade");
+});
+
+test("situação da atividade: atrasada, vence hoje e no prazo", () => {
+  const base = { id: "A-001", status: "Em andamento" as const };
+  assert.equal(situacaoAtividade(atividade({ ...base, prazo: "2026-06-10" }), [], "2026-06-15").tipo, "atrasada");
+  assert.equal(situacaoAtividade(atividade({ ...base, prazo: "2026-06-15" }), [], "2026-06-15").tipo, "vence-hoje");
+  assert.equal(situacaoAtividade(atividade({ ...base, prazo: "2026-06-20" }), [], "2026-06-15").tipo, "no-prazo");
+  assert.equal(situacaoAtividade(atividade({ ...base }), [], "2026-06-15").tipo, "sem-prazo");
+});
+
+test("situação da atividade concluída compara com o prazo", () => {
+  const noPrazo = atividade({ status: "Concluída", prazo: "2026-06-15", dataConclusao: "2026-06-12" });
+  assert.equal(situacaoAtividade(noPrazo, [], "2026-06-20").tipo, "concluida-no-prazo");
+  const atrasada = atividade({ status: "Concluída", prazo: "2026-06-10", dataConclusao: "2026-06-15" });
+  assert.deepEqual(situacaoAtividade(atrasada, [], "2026-06-20"), { tipo: "concluida-com-atraso", dias: 3 });
+  const semData = atividade({ status: "Concluída", prazo: "2026-06-10" });
+  assert.equal(situacaoAtividade(semData, [], "2026-06-20").tipo, "concluida");
+});
+
+test("atividade de fluxo esperando predecessora aparece como bloqueada", () => {
+  const primeira = atividade({ id: "A-001", fluxoId: "F-001" });
+  const segunda = atividade({ id: "A-002", fluxoId: "F-001", predecessoras: ["A-001"] });
+  assert.equal(situacaoAtividade(segunda, [primeira, segunda], "2026-06-15").tipo, "bloqueada");
+  const feita = { ...primeira, status: "Concluída" as const };
+  assert.equal(situacaoAtividade(segunda, [feita, segunda], "2026-06-15").tipo, "sem-prazo");
 });

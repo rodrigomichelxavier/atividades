@@ -29,7 +29,7 @@ export type Situacao =
   | { tipo: "concluida-no-prazo" }
   | { tipo: "concluida-com-atraso"; dias: number }
   | { tipo: "concluida" }
-  | { tipo: "bloqueada"; por: Etapa[] }
+  | { tipo: "bloqueada"; por: { id: string; titulo: string }[] }
   | { tipo: "atrasada"; dias: number }
   | { tipo: "vence-hoje" }
   | { tipo: "no-prazo"; dias: number }
@@ -283,4 +283,95 @@ export function niveisDeDerivacao(itens: ModeloItem[]): Map<string, number> {
     }
   }
   return niveis;
+}
+
+// ---------- Itens de trabalho (o que o painel conta) ----------
+
+/** Situação de uma atividade, na mesma linguagem das etapas. */
+export function situacaoAtividade(
+  atividade: Atividade,
+  atividades: Atividade[],
+  dataHoje: DataISO,
+): Situacao {
+  if (atividade.status === "Concluída") {
+    if (!atividade.prazo || !atividade.dataConclusao) return { tipo: "concluida" };
+    const atraso = diasUteisEntre(atividade.prazo, atividade.dataConclusao);
+    return atraso > 0 ? { tipo: "concluida-com-atraso", dias: atraso } : { tipo: "concluida-no-prazo" };
+  }
+
+  if (atividade.status === "A fazer" && atividade.predecessoras.length > 0) {
+    const pendentes = atividade.predecessoras
+      .map((id) => atividades.find((a) => a.id === id))
+      .filter((a): a is Atividade => !!a && a.status !== "Concluída");
+    if (pendentes.length > 0) {
+      return { tipo: "bloqueada", por: pendentes.map((a) => ({ id: a.id, titulo: a.titulo })) };
+    }
+  }
+
+  if (!atividade.prazo) return { tipo: "sem-prazo" };
+  if (atividade.prazo === dataHoje) return { tipo: "vence-hoje" };
+  if (atividade.prazo < dataHoje) {
+    return { tipo: "atrasada", dias: Math.max(1, diasUteisEntre(atividade.prazo, dataHoje)) };
+  }
+  return { tipo: "no-prazo", dias: diasUteisEntre(dataHoje, atividade.prazo) };
+}
+
+/**
+ * O que está na ponta do trabalho: a etapa, quando a atividade tem etapas, e a
+ * própria atividade quando não tem. Assim o painel conta uma vez só, e serve
+ * tanto para quem detalha atividades em etapas quanto para quem trabalha com as
+ * atividades de um fluxo.
+ */
+export interface ItemTrabalho {
+  id: string;
+  titulo: string;
+  atividadeId: string;
+  /** Nome da atividade quando o item é uma etapa dela. */
+  contexto: string | null;
+  responsavelId: string | null;
+  status: Atividade["status"];
+  prazo: DataISO | null;
+  dataConclusao: DataISO | null;
+  situacao: Situacao;
+}
+
+export function itensDeTrabalho(
+  atividades: Atividade[],
+  etapas: Etapa[],
+  dataHoje: DataISO,
+): ItemTrabalho[] {
+  const comEtapas = new Set(etapas.map((e) => e.atividadeId));
+  const itens: ItemTrabalho[] = [];
+
+  for (const a of atividades) {
+    if (comEtapas.has(a.id)) continue;
+    itens.push({
+      id: a.id,
+      titulo: a.titulo,
+      atividadeId: a.id,
+      contexto: null,
+      responsavelId: a.responsavelId,
+      status: a.status,
+      prazo: a.prazo,
+      dataConclusao: a.dataConclusao,
+      situacao: situacaoAtividade(a, atividades, dataHoje),
+    });
+  }
+
+  for (const e of etapas) {
+    const atividade = atividades.find((a) => a.id === e.atividadeId);
+    itens.push({
+      id: e.id,
+      titulo: e.titulo,
+      atividadeId: e.atividadeId,
+      contexto: atividade?.titulo ?? null,
+      responsavelId: e.responsavelId,
+      status: e.status,
+      prazo: prazoEfetivo(e),
+      dataConclusao: e.dataConclusao,
+      situacao: situacaoEtapa(e, etapas, dataHoje),
+    });
+  }
+
+  return itens;
 }

@@ -27,6 +27,7 @@ export interface Atividade {
   status: Status;
   dataInicio: DataISO | null;
   prazo: DataISO | null;
+  dataConclusao: DataISO | null;
   criadaEm: DataISO;
   /** Fluxo de trabalho a que pertence. Vazio nas atividades de rotina. */
   fluxoId: string | null;

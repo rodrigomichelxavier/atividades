@@ -62,6 +62,7 @@ function atividade(parcial: Partial<Atividade>): Atividade {
     status: "A fazer",
     dataInicio: null,
     prazo: null,
+    dataConclusao: null,
     criadaEm: SEG,
     fluxoId: null,
     ordem: 0,

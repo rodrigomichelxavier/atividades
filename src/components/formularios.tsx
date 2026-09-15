@@ -5,6 +5,7 @@ import { useState } from "react";
 import { hoje, somarDiasUteis } from "@/lib/datas";
 import { dependentes, dependentesDoItem, etapasDaAtividade, itensDoModelo, proximoId } from "@/lib/fluxo";
 import {
+  aplicarStatusAtividade,
   aplicarStatusEtapa,
   salvarAtividade,
   salvarEtapa,
@@ -93,17 +94,20 @@ export function FormAtividade({
       status: "A fazer",
       dataInicio: null,
       prazo: null,
+      dataConclusao: null,
       criadaEm: hoje(),
       ...ATIVIDADE_SEM_FLUXO,
     },
   );
   const set = <K extends keyof Atividade>(k: K, v: Atividade[K]) => setValor((a) => ({ ...a, [k]: v }));
   const prazoAntesDoInicio = !!valor.dataInicio && !!valor.prazo && valor.prazo < valor.dataInicio;
+  const conclusaoAntesDoInicio =
+    !!valor.dataInicio && !!valor.dataConclusao && valor.dataConclusao < valor.dataInicio;
 
   return (
     <JanelaFormulario
       aberta
-      podeSalvar={valor.titulo.trim() !== "" && !prazoAntesDoInicio}
+      podeSalvar={valor.titulo.trim() !== "" && !prazoAntesDoInicio && !conclusaoAntesDoInicio}
       tamanho="lg"
       titulo={atividade ? "Editar atividade" : "Nova atividade"}
       onFechar={onFechar}
@@ -142,10 +146,10 @@ export function FormAtividade({
           label="Status"
           opcoes={opcoesDe(STATUS)}
           valor={valor.status}
-          onChange={(v) => v && set("status", v as Atividade["status"])}
+          onChange={(v) => v && setValor((a) => aplicarStatusAtividade(a, v as Atividade["status"]))}
         />
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <CampoTexto
           label="Data de início"
           tipo="date"
@@ -158,6 +162,20 @@ export function FormAtividade({
           tipo="date"
           valor={valor.prazo ?? ""}
           onChange={(v) => set("prazo", v || null)}
+        />
+        <CampoTexto
+          descricao={conclusaoAntesDoInicio ? "A conclusão não pode ser antes do início." : undefined}
+          label="Data de conclusão"
+          tipo="date"
+          valor={valor.dataConclusao ?? ""}
+          onChange={(v) => {
+            const data = v || null;
+            setValor((a) => ({
+              ...a,
+              dataConclusao: data,
+              status: data ? "Concluída" : a.status === "Concluída" ? "Em andamento" : a.status,
+            }));
+          }}
         />
       </div>
     </JanelaFormulario>
