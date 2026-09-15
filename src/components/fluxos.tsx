@@ -15,13 +15,21 @@ import {
 import { Button, Card, ProgressBar, Table, Tooltip, toast } from "@heroui/react";
 import { memo, useCallback, useMemo, useState } from "react";
 import { hoje } from "@/lib/datas";
-import { atividadesDoFluxo, datasDoFluxo, dependentesDoItem, itensDoModelo, progressoFluxo } from "@/lib/fluxo";
+import {
+  atividadesDoFluxo,
+  datasDoFluxo,
+  dependentesDoItem,
+  itensDoModelo,
+  niveisDeDerivacao,
+  progressoFluxo,
+} from "@/lib/fluxo";
 import {
   excluirFluxo,
   excluirModelo,
   excluirModeloItem,
   iniciarFluxo,
   moverModeloItem,
+  ordenarModeloPorDependencia,
   salvarModeloItem,
   type AtividadePlanejada,
 } from "@/lib/operacoes";
@@ -311,9 +319,18 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
   const [colando, setColando] = useState(false);
   const [excluindo, setExcluindo] = useState<ModeloItem | null>(null);
   const itens = useMemo(() => itensDoModelo(modelo.id, dados.modeloItens), [modelo.id, dados.modeloItens]);
-  // Cada campo grava direto: a edição acontece na própria linha, sem modal.
-  const salvar = useCallback((item: ModeloItem) => alterar((d) => salvarModeloItem(d, item)), [alterar]);
-  const mover = useCallback((id: string, direcao: -1 | 1) => alterar((d) => moverModeloItem(d, id, direcao)), [alterar]);
+  const niveis = useMemo(() => niveisDeDerivacao(itens), [itens]);
+
+  // Cada campo grava direto: a edição acontece na própria linha, sem modal. Ao
+  // mudar dependências a lista se reordena, para a derivação ficar visível.
+  const salvar = useCallback(
+    (item: ModeloItem) => alterar((d) => ordenarModeloPorDependencia(salvarModeloItem(d, item), item.modeloId)),
+    [alterar],
+  );
+  const mover = useCallback(
+    (id: string, direcao: -1 | 1) => alterar((d) => moverModeloItem(d, id, direcao)),
+    [alterar],
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -330,7 +347,10 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
           <p className="text-sm text-muted">
             {modelo.descricao || "As atividades abaixo viram atividades de verdade quando o fluxo é iniciado."}
           </p>
-          <p className="text-xs text-muted">Edite direto na linha: o campo salva ao sair dele ou no Enter.</p>
+          <p className="text-xs text-muted">
+            Edite direto na linha: o campo salva ao sair dele ou no Enter. Ao definir uma dependência, a atividade se
+            reposiciona depois da que ela espera.
+          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" onPress={() => setColando(true)}>
@@ -382,6 +402,7 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
                 indice={indice}
                 item={item}
                 itens={itens}
+                nivel={niveis.get(item.id) ?? 0}
                 pessoas={dados.pessoas}
                 todosItens={dados.modeloItens}
                 onExcluir={setExcluindo}
@@ -411,6 +432,9 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
   );
 }
 
+/** Além disso a indentação para de crescer, senão o campo some da tela. */
+const NIVEL_MAXIMO = 6;
+
 const COLUNAS_MODELO =
   "grid grid-cols-[2.5rem_minmax(0,1.7fr)_minmax(0,1.1fr)_8.5rem_6rem_minmax(0,1.2fr)_6.5rem] items-center gap-3";
 
@@ -422,6 +446,7 @@ const LinhaModelo = memo(function LinhaModelo({
   item,
   indice,
   itens,
+  nivel,
   todosItens,
   pessoas,
   onSalvar,
@@ -431,6 +456,8 @@ const LinhaModelo = memo(function LinhaModelo({
   item: ModeloItem;
   indice: number;
   itens: ModeloItem[];
+  /** Profundidade da derivação, para indentar a linha. */
+  nivel: number;
   todosItens: ModeloItem[];
   pessoas: Pessoa[];
   onSalvar: (item: ModeloItem) => void;
@@ -449,12 +476,21 @@ const LinhaModelo = memo(function LinhaModelo({
   return (
     <div className={`${COLUNAS_MODELO} border-b border-border px-3 py-2 last:border-b-0`}>
       <span className="text-sm text-muted tabular-nums">{indice + 1}</span>
-      <CampoTextoLinha
-        exigeValor
-        label={`Nome da atividade ${indice + 1}`}
-        valor={item.titulo}
-        onConfirmar={(v) => onSalvar({ ...item, titulo: v })}
-      />
+      <div className="flex min-w-0 items-center gap-1">
+        {/* Indentação da derivação, limitada para não empurrar o campo para fora. */}
+        <span aria-hidden className="shrink-0" style={{ width: Math.min(nivel, NIVEL_MAXIMO) * 14 }} />
+        {predecessorasValidas.length > 0 && (
+          <span aria-hidden className="shrink-0 text-muted" title="Depende de outra atividade">
+            ↳
+          </span>
+        )}
+        <CampoTextoLinha
+          exigeValor
+          label={`Nome da atividade ${indice + 1}`}
+          valor={item.titulo}
+          onConfirmar={(v) => onSalvar({ ...item, titulo: v })}
+        />
+      </div>
       <CampoSelecaoLinha
         label={`Responsável padrão de ${item.titulo}`}
         opcoes={opcoesPessoas(pessoas)}
@@ -565,6 +601,7 @@ function IniciarFluxo({
 }) {
   const { dados, alterar } = useDados();
   const itens = useMemo(() => itensDoModelo(modelo.id, dados.modeloItens), [modelo.id, dados.modeloItens]);
+  const niveis = useMemo(() => niveisDeDerivacao(itens), [itens]);
   const [nome, setNome] = useState(modelo.nome);
   const [dataInicio, setDataInicio] = useState(hoje());
   const [linhas, setLinhas] = useState<Record<string, LinhaPlano>>(() =>
@@ -714,7 +751,11 @@ function IniciarFluxo({
                       />
                     </Table.Cell>
                     <Table.Cell>
-                      <span className="block font-medium">
+                      <span
+                        className="block font-medium"
+                        style={{ paddingInlineStart: Math.min(niveis.get(item.id) ?? 0, NIVEL_MAXIMO) * 14 }}
+                      >
+                        {(niveis.get(item.id) ?? 0) > 0 && <span className="text-muted">↳ </span>}
                         {indice + 1}. {item.titulo}
                       </span>
                       {item.predecessoras.length > 0 && (

@@ -1,5 +1,5 @@
 import { hoje } from "./datas.ts";
-import { itensDoModelo, predecessorasPendentes, proximoId } from "./fluxo.ts";
+import { itensDoModelo, ordenarPorDependencia, predecessorasPendentes, proximoId } from "./fluxo.ts";
 import {
   ATIVIDADE_SEM_FLUXO,
   type Atividade,
@@ -243,5 +243,18 @@ export function excluirFluxo(dados: Dados, id: string, comAtividades: boolean): 
       ? dados.atividades.filter((a) => !daqui.has(a.id))
       : dados.atividades.map((a) => (daqui.has(a.id) ? { ...a, ...ATIVIDADE_SEM_FLUXO } : a)),
     etapas: comAtividades ? dados.etapas.filter((e) => !daqui.has(e.atividadeId)) : dados.etapas,
+  };
+}
+
+/** Reordena o modelo para que cada atividade venha depois de suas predecessoras. */
+export function ordenarModeloPorDependencia(dados: Dados, modeloId: string): Dados {
+  const ordenados = ordenarPorDependencia(itensDoModelo(modeloId, dados.modeloItens));
+  const novaOrdem = new Map(ordenados.map((i, indice) => [i.id, indice + 1]));
+  return {
+    ...dados,
+    modeloItens: dados.modeloItens.map((i) => {
+      const ordem = novaOrdem.get(i.id);
+      return ordem === undefined || ordem === i.ordem ? i : { ...i, ordem };
+    }),
   };
 }
