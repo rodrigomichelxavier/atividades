@@ -19,9 +19,10 @@ import {
   atividadesDoFluxo,
   datasDoFluxo,
   dependentesDoItem,
+  estruturaDoFluxo,
   itensDoModelo,
-  niveisDeDerivacao,
   progressoFluxo,
+  type Derivacao,
 } from "@/lib/fluxo";
 import {
   excluirFluxo,
@@ -319,7 +320,7 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
   const [colando, setColando] = useState(false);
   const [excluindo, setExcluindo] = useState<ModeloItem | null>(null);
   const itens = useMemo(() => itensDoModelo(modelo.id, dados.modeloItens), [modelo.id, dados.modeloItens]);
-  const niveis = useMemo(() => niveisDeDerivacao(itens), [itens]);
+  const estrutura = useMemo(() => estruturaDoFluxo(itens), [itens]);
 
   // Cada campo grava direto: a edição acontece na própria linha, sem modal. Ao
   // mudar dependências a lista se reordena, para a derivação ficar visível.
@@ -349,7 +350,8 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
           </p>
           <p className="text-xs text-muted">
             Edite direto na linha: o campo salva ao sair dele ou no Enter. Ao definir uma dependência, a atividade se
-            reposiciona depois da que ela espera.
+            reposiciona depois da que ela espera. O recuo agrupa os caminhos que correm em paralelo a partir da mesma
+            atividade; quem segue sozinho continua na coluna principal.
           </p>
         </div>
         <div className="flex gap-2">
@@ -402,7 +404,7 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
                 indice={indice}
                 item={item}
                 itens={itens}
-                nivel={niveis.get(item.id) ?? 0}
+                derivacao={estrutura.get(item.id) ?? SEM_DERIVACAO}
                 pessoas={dados.pessoas}
                 todosItens={dados.modeloItens}
                 onExcluir={setExcluindo}
@@ -435,6 +437,8 @@ function ConfigurarFluxo({ modelo, onVoltar }: { modelo: FluxoModelo; onVoltar: 
 /** Além disso a indentação para de crescer, senão o campo some da tela. */
 const NIVEL_MAXIMO = 6;
 
+const SEM_DERIVACAO: Derivacao = { nivel: 0, conector: "" };
+
 const COLUNAS_MODELO =
   "grid grid-cols-[2.5rem_minmax(0,1.7fr)_minmax(0,1.1fr)_8.5rem_6rem_minmax(0,1.2fr)_6.5rem] items-center gap-3";
 
@@ -446,7 +450,7 @@ const LinhaModelo = memo(function LinhaModelo({
   item,
   indice,
   itens,
-  nivel,
+  derivacao,
   todosItens,
   pessoas,
   onSalvar,
@@ -456,8 +460,8 @@ const LinhaModelo = memo(function LinhaModelo({
   item: ModeloItem;
   indice: number;
   itens: ModeloItem[];
-  /** Profundidade da derivação, para indentar a linha. */
-  nivel: number;
+  /** Onde a atividade fica no desenho do fluxo. */
+  derivacao: Derivacao;
   todosItens: ModeloItem[];
   pessoas: Pessoa[];
   onSalvar: (item: ModeloItem) => void;
@@ -476,14 +480,21 @@ const LinhaModelo = memo(function LinhaModelo({
   return (
     <div className={`${COLUNAS_MODELO} border-b border-border px-3 py-2 last:border-b-0`}>
       <span className="text-sm text-muted tabular-nums">{indice + 1}</span>
-      <div className="flex min-w-0 items-center gap-1">
-        {/* Indentação da derivação, limitada para não empurrar o campo para fora. */}
-        <span aria-hidden className="shrink-0" style={{ width: Math.min(nivel, NIVEL_MAXIMO) * 14 }} />
-        {predecessorasValidas.length > 0 && (
-          <span aria-hidden className="shrink-0 text-muted" title="Depende de outra atividade">
-            ↳
-          </span>
-        )}
+      <div className="flex min-w-0 items-center self-stretch">
+        {/* Indentação do ramo, limitada para não empurrar o campo para fora. */}
+        <span aria-hidden className="shrink-0" style={{ width: Math.min(derivacao.nivel, NIVEL_MAXIMO) * 16 }} />
+        {/* Guia contínua ligando as atividades que saem da mesma predecessora. */}
+        <span aria-hidden className="relative -my-2 w-4 shrink-0 self-stretch">
+          {derivacao.conector && (
+            <>
+              <span
+                className="absolute left-1/2 top-0 w-px bg-border"
+                style={{ bottom: derivacao.conector === "fim" ? "50%" : 0 }}
+              />
+              <span className="absolute left-1/2 top-1/2 h-px w-2 bg-border" />
+            </>
+          )}
+        </span>
         <CampoTextoLinha
           exigeValor
           label={`Nome da atividade ${indice + 1}`}
@@ -601,7 +612,7 @@ function IniciarFluxo({
 }) {
   const { dados, alterar } = useDados();
   const itens = useMemo(() => itensDoModelo(modelo.id, dados.modeloItens), [modelo.id, dados.modeloItens]);
-  const niveis = useMemo(() => niveisDeDerivacao(itens), [itens]);
+  const estrutura = useMemo(() => estruturaDoFluxo(itens), [itens]);
   const [nome, setNome] = useState(modelo.nome);
   const [dataInicio, setDataInicio] = useState(hoje());
   const [linhas, setLinhas] = useState<Record<string, LinhaPlano>>(() =>
@@ -753,9 +764,15 @@ function IniciarFluxo({
                     <Table.Cell>
                       <span
                         className="block font-medium"
-                        style={{ paddingInlineStart: Math.min(niveis.get(item.id) ?? 0, NIVEL_MAXIMO) * 14 }}
+                        style={{
+                          paddingInlineStart: Math.min(estrutura.get(item.id)?.nivel ?? 0, NIVEL_MAXIMO) * 16,
+                        }}
                       >
-                        {(niveis.get(item.id) ?? 0) > 0 && <span className="text-muted">↳ </span>}
+                        {estrutura.get(item.id)?.conector && (
+                          <span aria-hidden className="text-muted">
+                            {estrutura.get(item.id)?.conector === "fim" ? "└ " : "├ "}
+                          </span>
+                        )}
                         {indice + 1}. {item.titulo}
                       </span>
                       {item.predecessoras.length > 0 && (
