@@ -13,6 +13,7 @@ import {
   TriangleExclamation,
 } from "@gravity-ui/icons";
 import { Alert, Button, Card, Chip, Spinner, Tabs, Toast } from "@heroui/react";
+import { I18nProvider } from "react-aria-components/I18nProvider";
 import { useState } from "react";
 import type { ErroPlanilha } from "@/lib/planilha";
 import { DadosProvider, useDados, type Salvamento } from "@/lib/store";
@@ -23,11 +24,15 @@ import { Painel } from "./painel";
 import { Time } from "./time";
 
 export function App() {
+  // Fixa o idioma dos componentes (listas, datas, mensagens de campo) em
+  // português, em vez de seguir o idioma do navegador.
   return (
-    <DadosProvider>
-      <Toast.Provider placement="bottom end" />
-      <Conteudo />
-    </DadosProvider>
+    <I18nProvider locale="pt-BR">
+      <DadosProvider>
+        <Toast.Provider placement="bottom end" />
+        <Conteudo />
+      </DadosProvider>
+    </I18nProvider>
   );
 }
 

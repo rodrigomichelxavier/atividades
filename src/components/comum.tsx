@@ -13,8 +13,8 @@ import {
   TextArea,
   TextField,
 } from "@heroui/react";
-import { ChevronLeft, ChevronRight, TrashBin } from "@gravity-ui/icons";
-import type { ReactNode } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, TrashBin } from "@gravity-ui/icons";
+import { useState, type ReactNode } from "react";
 import { formatarData } from "@/lib/datas";
 import type { Situacao } from "@/lib/fluxo";
 import type { Pessoa, Prioridade, Status } from "@/lib/tipos";
@@ -129,6 +129,109 @@ export function CampoTexto(props: {
   );
 }
 
+/**
+ * Campo de texto para edição direta na linha da tabela: guarda o que está sendo
+ * digitado e só confirma ao sair do campo ou no Enter, para não gravar a
+ * planilha a cada tecla. Texto vazio volta ao valor anterior.
+ */
+export function CampoTextoLinha(props: {
+  label: string;
+  valor: string;
+  onConfirmar: (v: string) => void;
+  tipo?: "text" | "number";
+  placeholder?: string;
+  exigeValor?: boolean;
+}) {
+  const [texto, setTexto] = useState(props.valor);
+  const [valorDeFora, setValorDeFora] = useState(props.valor);
+
+  // O valor mudou fora daqui (reordenação, edição em outra aba): reflete no campo.
+  if (props.valor !== valorDeFora) {
+    setValorDeFora(props.valor);
+    setTexto(props.valor);
+  }
+
+  function confirmar() {
+    const novo = texto.trim();
+    if (props.exigeValor && novo === "") {
+      setTexto(props.valor);
+      return;
+    }
+    if (novo !== props.valor) props.onConfirmar(novo);
+  }
+
+  return (
+    <TextField aria-label={props.label} className="w-full" type={props.tipo ?? "text"} value={texto} onChange={setTexto}>
+      <Input
+        className="w-full"
+        min={props.tipo === "number" ? 0 : undefined}
+        placeholder={props.placeholder}
+        onBlur={confirmar}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") setTexto(props.valor);
+        }}
+      />
+    </TextField>
+  );
+}
+
+/**
+ * Seleção nativa, para linhas de tabela editável: o componente rico do HeroUI
+ * monta uma coleção por campo, e dezenas deles na mesma tela travam a digitação.
+ */
+export function CampoSelecaoLinha(props: {
+  label: string;
+  valor: string | null;
+  opcoes: Opcao[];
+  onChange: (v: string | null) => void;
+  permitirVazio?: string;
+}) {
+  return (
+    <select
+      aria-label={props.label}
+      className="h-9 w-full min-w-0 truncate rounded-field border bg-field px-2 text-sm text-field-foreground shadow-field outline-none focus-visible:status-focused"
+      style={{ borderWidth: "var(--border-width-field)", borderColor: "var(--field-border)" }}
+      value={props.valor ?? ""}
+      onChange={(e) => props.onChange(e.target.value || null)}
+    >
+      {props.permitirVazio && <option value="">{props.permitirVazio}</option>}
+      {props.opcoes.map((o) => (
+        <option key={o.id} value={o.id}>
+          {o.rotulo}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Botão com cara de campo, para ocupar o lugar de um select até ele ser aberto. */
+export function BotaoCampo(props: {
+  rotulo: string;
+  vazio?: boolean;
+  desabilitado?: boolean;
+  titulo?: string;
+  onPress: () => void;
+}) {
+  return (
+    <button
+      className={`flex h-9 w-full min-w-0 items-center justify-between gap-1 rounded-field border bg-field px-3 text-start text-sm shadow-field outline-none focus-visible:status-focused ${
+        props.desabilitado ? "status-disabled" : ""
+      }`}
+      disabled={props.desabilitado}
+      style={{ borderWidth: "var(--border-width-field)", borderColor: "var(--field-border)" }}
+      title={props.titulo}
+      type="button"
+      onClick={props.onPress}
+    >
+      <span className={`min-w-0 truncate ${props.vazio ? "text-field-placeholder" : "text-field-foreground"}`}>
+        {props.rotulo}
+      </span>
+      <ChevronDown className="size-4 shrink-0 text-field-placeholder" />
+    </button>
+  );
+}
+
 export interface Opcao {
   id: string;
   rotulo: string;
@@ -184,17 +287,22 @@ export function CampoMultiplo(props: {
   onChange: (v: string[]) => void;
   placeholder?: string;
   descricao?: string;
+  /** Mantém o rótulo para leitores de tela, mas fora da tela. */
+  labelOculto?: boolean;
+  /** Já abre a lista ao aparecer — para quando o campo só é montado ao ser clicado. */
+  autoAbrir?: boolean;
 }) {
   return (
     <Select
       className="w-full"
+      defaultOpen={props.autoAbrir}
       isDisabled={props.opcoes.length === 0}
       placeholder={props.placeholder}
       selectionMode="multiple"
       value={props.valores}
       onChange={(v) => props.onChange((v as (string | number)[]).map(String))}
     >
-      <Label>{props.label}</Label>
+      <Label className={props.labelOculto ? "sr-only" : undefined}>{props.label}</Label>
       <Select.Trigger className="items-center">
         <Select.Value className="min-w-0 truncate" />
         <Select.Indicator />
