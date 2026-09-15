@@ -9,6 +9,17 @@ import { useDados } from "@/lib/store";
 import { STATUS, type Status } from "@/lib/tipos";
 import { CampoSelecao, ChipPrioridade, ChipSituacao, DataTexto, nomePessoa, opcoesPessoas } from "./comum";
 
+const ROTINA = "__rotina__";
+const FLUXO = "__fluxo__";
+
+/** Uma atividade passa pelo filtro de origem: rotina, de fluxo, ou de um fluxo. */
+function daOrigem(fluxoId: string | null, origem: string | null): boolean {
+  if (!origem) return true;
+  if (origem === ROTINA) return !fluxoId;
+  if (origem === FLUXO) return !!fluxoId;
+  return fluxoId === origem;
+}
+
 type Modo = "atividades" | "etapas";
 
 const COR_COLUNA: Record<Status, string> = {
@@ -20,8 +31,10 @@ const COR_COLUNA: Record<Status, string> = {
 
 export function Kanban({ onAbrirAtividade }: { onAbrirAtividade: (id: string) => void }) {
   const { dados, alterar } = useDados();
-  const [modo, setModo] = useState<Modo>("etapas");
+  // Quem usa fluxos costuma não ter etapas: começa no quadro que tem conteúdo.
+  const [modo, setModo] = useState<Modo>(dados.etapas.length > 0 ? "etapas" : "atividades");
   const [responsavel, setResponsavel] = useState<string | null>(null);
+  const [origem, setOrigem] = useState<string | null>(null);
   const [sobre, setSobre] = useState<Status | null>(null);
   const dataHoje = hoje();
 
@@ -44,6 +57,7 @@ export function Kanban({ onAbrirAtividade }: { onAbrirAtividade: (id: string) =>
   if (modo === "atividades") {
     for (const a of dados.atividades) {
       if (responsavel && a.responsavelId !== responsavel) continue;
+      if (!daOrigem(a.fluxoId, origem)) continue;
       cartoes[a.status].push(
         <Cartao key={a.id} id={a.id} onAbrir={() => onAbrirAtividade(a.id)}>
           <div className="flex items-start justify-between gap-2">
@@ -67,6 +81,7 @@ export function Kanban({ onAbrirAtividade }: { onAbrirAtividade: (id: string) =>
     for (const e of porPrazo) {
       if (responsavel && e.responsavelId !== responsavel) continue;
       const atividade = dados.atividades.find((a) => a.id === e.atividadeId);
+      if (!daOrigem(atividade?.fluxoId ?? null, origem)) continue;
       cartoes[e.status].push(
         <Cartao key={e.id} id={e.id} onAbrir={() => onAbrirAtividade(e.atividadeId)}>
           <span className="text-xs text-muted">{atividade?.titulo}</span>
@@ -100,14 +115,31 @@ export function Kanban({ onAbrirAtividade }: { onAbrirAtividade: (id: string) =>
             </Tabs.List>
           </Tabs.ListContainer>
         </Tabs>
-        <div className="w-full sm:w-56">
-          <CampoSelecao
-            label="Responsável"
-            opcoes={opcoesPessoas(dados.pessoas)}
-            permitirVazio="Todos"
-            valor={responsavel}
-            onChange={setResponsavel}
-          />
+        <div className="flex w-full flex-wrap gap-3 sm:w-auto">
+          <div className="w-full sm:w-56">
+            <CampoSelecao
+              label="Responsável"
+              opcoes={opcoesPessoas(dados.pessoas)}
+              permitirVazio="Todos"
+              valor={responsavel}
+              onChange={setResponsavel}
+            />
+          </div>
+          <div className="w-full sm:w-56">
+            <CampoSelecao
+              label="Origem"
+              opcoes={[
+                { id: ROTINA, rotulo: "Atividades de rotina" },
+                { id: FLUXO, rotulo: "Atividades de fluxo" },
+                ...[...dados.fluxos]
+                  .sort((a, b) => b.dataInicio.localeCompare(a.dataInicio))
+                  .map((f) => ({ id: f.id, rotulo: `Fluxo: ${f.nome}` })),
+              ]}
+              permitirVazio="Todas"
+              valor={origem}
+              onChange={setOrigem}
+            />
+          </div>
         </div>
       </div>
       <p className="text-sm text-muted">

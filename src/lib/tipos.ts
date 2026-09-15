@@ -28,6 +28,14 @@ export interface Atividade {
   dataInicio: DataISO | null;
   prazo: DataISO | null;
   criadaEm: DataISO;
+  /** Fluxo de trabalho a que pertence. Vazio nas atividades de rotina. */
+  fluxoId: string | null;
+  /** Posição dentro do fluxo. Zero fora de um fluxo. */
+  ordem: number;
+  /** SLA em dias úteis herdado do modelo do fluxo, usado ao sugerir datas. */
+  slaDiasUteis: number | null;
+  /** Atividades do mesmo fluxo que precisam terminar antes desta começar. */
+  predecessoras: string[];
 }
 
 export interface Etapa {
@@ -47,10 +55,60 @@ export interface Etapa {
   observacoes: string;
 }
 
+/** Modelo reutilizável de fluxo de trabalho: a receita, sem datas. */
+export interface FluxoModelo {
+  id: string;
+  nome: string;
+  descricao: string;
+  criadoEm: DataISO;
+}
+
+/** Uma atividade prevista no modelo. Vira uma Atividade quando o fluxo é iniciado. */
+export interface ModeloItem {
+  id: string;
+  modeloId: string;
+  ordem: number;
+  titulo: string;
+  responsavelId: string | null;
+  prioridade: Prioridade;
+  /** SLA em dias úteis, contado do início do fluxo ou do fim das predecessoras. */
+  slaDiasUteis: number | null;
+  /** Itens do mesmo modelo que precisam terminar antes deste começar. */
+  predecessoras: string[];
+}
+
+/** Fluxo iniciado: agrupa as atividades criadas a partir de um modelo. */
+export interface Fluxo {
+  id: string;
+  /** Modelo de origem. Fica vazio se o modelo for excluído depois. */
+  modeloId: string | null;
+  nome: string;
+  dataInicio: DataISO;
+  criadoEm: DataISO;
+}
+
 export interface Dados {
   pessoas: Pessoa[];
   atividades: Atividade[];
   etapas: Etapa[];
+  modelos: FluxoModelo[];
+  modeloItens: ModeloItem[];
+  fluxos: Fluxo[];
 }
 
-export const DADOS_VAZIOS: Dados = { pessoas: [], atividades: [], etapas: [] };
+export const DADOS_VAZIOS: Dados = {
+  pessoas: [],
+  atividades: [],
+  etapas: [],
+  modelos: [],
+  modeloItens: [],
+  fluxos: [],
+};
+
+/** Valores de uma atividade de rotina, fora de qualquer fluxo. */
+export const ATIVIDADE_SEM_FLUXO = {
+  fluxoId: null,
+  ordem: 0,
+  slaDiasUteis: null,
+  predecessoras: [] as string[],
+} satisfies Pick<Atividade, "fluxoId" | "ordem" | "slaDiasUteis" | "predecessoras">;

@@ -1,5 +1,12 @@
-import { diasUteisEntre, somarDiasUteis } from "./datas.ts";
-import type { Atividade, DataISO, Etapa } from "./tipos.ts";
+import { diasUteisEntre, ehDiaUtil, somarDias, somarDiasUteis } from "./datas.ts";
+import type { Atividade, DataISO, Etapa, ModeloItem } from "./tipos.ts";
+
+/** A própria data, se for dia útil; senão a segunda-feira seguinte. */
+function proximoDiaUtil(data: DataISO): DataISO {
+  let atual = data;
+  while (!ehDiaUtil(atual)) atual = somarDias(atual, 1);
+  return atual;
+}
 
 /** Prazo calculado pelo SLA (data de início + N dias úteis). */
 export function prazoSla(etapa: Etapa): DataISO | null {
@@ -94,4 +101,111 @@ export function proximoId(prefixo: string, ids: string[]): string {
     return m ? Math.max(max, Number(m[1])) : max;
   }, 0);
   return `${prefixo}-${String(maior + 1).padStart(3, "0")}`;
+}
+
+// ---------- Fluxos de trabalho ----------
+
+/** Itens de um modelo, na ordem em que aparecem na configuração. */
+export function itensDoModelo(modeloId: string, itens: ModeloItem[]): ModeloItem[] {
+  return itens
+    .filter((i) => i.modeloId === modeloId)
+    .sort((a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id));
+}
+
+export function atividadesDoFluxo(fluxoId: string, atividades: Atividade[]): Atividade[] {
+  return atividades
+    .filter((a) => a.fluxoId === fluxoId)
+    .sort((a, b) => a.ordem - b.ordem || a.id.localeCompare(b.id));
+}
+
+export function progressoFluxo(fluxoId: string, atividades: Atividade[]): number {
+  const lista = atividadesDoFluxo(fluxoId, atividades);
+  if (lista.length === 0) return 0;
+  const concluidas = lista.filter((a) => a.status === "Concluída").length;
+  return Math.round((concluidas / lista.length) * 100);
+}
+
+/** IDs que dependem (direta ou indiretamente) do item — não podem virar predecessoras dele. */
+export function dependentesDoItem(itemId: string, itens: ModeloItem[]): Set<string> {
+  const resultado = new Set<string>();
+  const fila = [itemId];
+  while (fila.length > 0) {
+    const atual = fila.shift()!;
+    for (const i of itens) {
+      if (i.predecessoras.includes(atual) && !resultado.has(i.id)) {
+        resultado.add(i.id);
+        fila.push(i.id);
+      }
+    }
+  }
+  return resultado;
+}
+
+export interface DatasSugeridas {
+  dataInicio: DataISO;
+  prazo: DataISO;
+}
+
+/**
+ * Datas sugeridas para cada item selecionado, a partir do início do fluxo.
+ *
+ * Um item sem predecessoras começa no dia do início do fluxo. Um item com
+ * predecessoras começa no primeiro dia útil após o prazo da última delas —
+ * predecessoras desmarcadas são ignoradas, e a cadeia se liga em quem sobrou.
+ * O prazo é o início mais o SLA em dias úteis; sem SLA, dura um dia.
+ */
+export function datasDoFluxo(
+  itens: ModeloItem[],
+  inicioDoFluxo: DataISO,
+  selecionados: ReadonlySet<string>,
+): Map<string, DatasSugeridas> {
+  const porId = new Map(itens.map((i) => [i.id, i]));
+  const datas = new Map<string, DatasSugeridas>();
+
+  // Predecessoras desmarcadas são substituídas pelas predecessoras delas, para
+  // que desmarcar um item no meio não solte os seguintes no início do fluxo.
+  function efetivas(item: ModeloItem, vistos = new Set<string>()): string[] {
+    return item.predecessoras.flatMap((id) => {
+      if (vistos.has(id)) return [];
+      vistos.add(id);
+      if (selecionados.has(id)) return [id];
+      const pred = porId.get(id);
+      return pred ? efetivas(pred, vistos) : [];
+    });
+  }
+
+  function calcular(item: ModeloItem, emCurso: Set<string>): DatasSugeridas {
+    const jaFeito = datas.get(item.id);
+    if (jaFeito) return jaFeito;
+
+    // Ciclo (não deveria acontecer, a configuração bloqueia): trata como sem predecessora.
+    const predecessoras = emCurso.has(item.id) ? [] : efetivas(item);
+    emCurso.add(item.id);
+
+    let dataInicio = inicioDoFluxo;
+    for (const id of predecessoras) {
+      const pred = porId.get(id);
+      if (!pred) continue;
+      const depois = proximoDiaUtil(somarDias(calcular(pred, emCurso).prazo, 1));
+      if (depois > dataInicio) dataInicio = depois;
+    }
+    dataInicio = proximoDiaUtil(dataInicio);
+
+    const resultado: DatasSugeridas = {
+      dataInicio,
+      prazo: somarDiasUteis(dataInicio, item.slaDiasUteis ?? 1),
+    };
+    datas.set(item.id, resultado);
+    emCurso.delete(item.id);
+    return resultado;
+  }
+
+  for (const item of itens) {
+    if (selecionados.has(item.id)) calcular(item, new Set());
+  }
+  // Itens desmarcados entram no cálculo como apoio da cadeia, mas não no resultado.
+  for (const id of [...datas.keys()]) {
+    if (!selecionados.has(id)) datas.delete(id);
+  }
+  return datas;
 }

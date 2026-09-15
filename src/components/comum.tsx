@@ -2,6 +2,7 @@
 
 import {
   Button,
+  Checkbox,
   Chip,
   Description,
   Input,
@@ -12,7 +13,7 @@ import {
   TextArea,
   TextField,
 } from "@heroui/react";
-import { TrashBin } from "@gravity-ui/icons";
+import { ChevronLeft, ChevronRight, TrashBin } from "@gravity-ui/icons";
 import type { ReactNode } from "react";
 import { formatarData } from "@/lib/datas";
 import type { Situacao } from "@/lib/fluxo";
@@ -106,6 +107,8 @@ export function CampoTexto(props: {
   multilinha?: boolean;
   tipo?: "text" | "email" | "number" | "date";
   autoFocus?: boolean;
+  /** Mantém o rótulo para leitores de tela, mas fora da tela. */
+  labelOculto?: boolean;
 }) {
   return (
     <TextField
@@ -115,7 +118,7 @@ export function CampoTexto(props: {
       value={props.valor}
       onChange={props.onChange}
     >
-      <Label>{props.label}</Label>
+      <Label className={props.labelOculto ? "sr-only" : undefined}>{props.label}</Label>
       {props.multilinha ? (
         <TextArea className="w-full" placeholder={props.placeholder} rows={3} />
       ) : (
@@ -140,6 +143,8 @@ export function CampoSelecao(props: {
   onChange: (v: string | null) => void;
   permitirVazio?: string;
   descricao?: string;
+  /** Mantém o rótulo para leitores de tela, mas fora da tela. */
+  labelOculto?: boolean;
 }) {
   const opcoes = props.permitirVazio ? [{ id: NENHUM, rotulo: props.permitirVazio }, ...props.opcoes] : props.opcoes;
   // O rótulo fica numa linha só; o title mostra por inteiro quando não couber.
@@ -150,7 +155,7 @@ export function CampoSelecao(props: {
       value={props.valor ?? (props.permitirVazio ? NENHUM : null)}
       onChange={(v) => props.onChange(v == null || v === NENHUM ? null : String(v))}
     >
-      <Label>{props.label}</Label>
+      <Label className={props.labelOculto ? "sr-only" : undefined}>{props.label}</Label>
       <Select.Trigger className="items-center">
         <Select.Value className="min-w-0 truncate">
           {selecionado ? <span title={selecionado}>{selecionado}</span> : undefined}
@@ -206,6 +211,31 @@ export function CampoMultiplo(props: {
         </ListBox>
       </Select.Popover>
     </Select>
+  );
+}
+
+export function CampoCheck(props: {
+  /** Texto ao lado da caixa. Sem ele, use `aria` para nomear o campo. */
+  rotulo?: string;
+  aria?: string;
+  marcado: boolean;
+  onChange: (v: boolean) => void;
+  descricao?: string;
+}) {
+  return (
+    <Checkbox aria-label={props.rotulo ? undefined : props.aria} isSelected={props.marcado} onChange={props.onChange}>
+      <Checkbox.Content>
+        <Checkbox.Control>
+          <Checkbox.Indicator />
+        </Checkbox.Control>
+        {props.rotulo && (
+          <span className="flex flex-col">
+            <span>{props.rotulo}</span>
+            {props.descricao && <span className="text-xs text-muted">{props.descricao}</span>}
+          </span>
+        )}
+      </Checkbox.Content>
+    </Checkbox>
   );
 }
 
@@ -295,6 +325,64 @@ export function ConfirmarExclusao(props: {
         </Modal.Dialog>
       </Modal.Container>
     </Modal.Backdrop>
+  );
+}
+
+const TAMANHOS_PAGINA = [25, 50, 100];
+
+/** Fatia a lista e devolve os controles de navegação. Nada aparece com uma página só. */
+export function Paginacao({
+  total,
+  pagina,
+  porPagina,
+  onPagina,
+  onPorPagina,
+}: {
+  total: number;
+  pagina: number;
+  porPagina: number;
+  onPagina: (p: number) => void;
+  onPorPagina: (n: number) => void;
+}) {
+  const paginas = Math.max(1, Math.ceil(total / porPagina));
+  const primeiro = total === 0 ? 0 : (pagina - 1) * porPagina + 1;
+  const ultimo = Math.min(total, pagina * porPagina);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+      <span className="text-muted">
+        {total === 0 ? "Nenhum resultado" : `${primeiro}–${ultimo} de ${total}`}
+      </span>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted whitespace-nowrap">Por página</span>
+          <div className="w-24">
+            <CampoSelecao
+              labelOculto
+              label="Itens por página"
+              opcoes={TAMANHOS_PAGINA.map((n) => ({ id: String(n), rotulo: String(n) }))}
+              valor={String(porPagina)}
+              onChange={(v) => v && onPorPagina(Number(v))}
+            />
+          </div>
+        </div>
+        {paginas > 1 && (
+          <div className="flex items-center gap-2">
+            <Button isDisabled={pagina <= 1} size="sm" variant="secondary" onPress={() => onPagina(pagina - 1)}>
+              <ChevronLeft />
+              Anterior
+            </Button>
+            <span className="text-xs whitespace-nowrap text-muted">
+              {pagina} de {paginas}
+            </span>
+            <Button isDisabled={pagina >= paginas} size="sm" variant="secondary" onPress={() => onPagina(pagina + 1)}>
+              Próxima
+              <ChevronRight />
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
