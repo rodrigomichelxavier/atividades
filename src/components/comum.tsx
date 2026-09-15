@@ -142,6 +142,8 @@ export function CampoSelecao(props: {
   descricao?: string;
 }) {
   const opcoes = props.permitirVazio ? [{ id: NENHUM, rotulo: props.permitirVazio }, ...props.opcoes] : props.opcoes;
+  // O rótulo fica numa linha só; o title mostra por inteiro quando não couber.
+  const selecionado = opcoes.find((o) => o.id === (props.valor ?? NENHUM))?.rotulo;
   return (
     <Select
       className="w-full"
@@ -149,8 +151,10 @@ export function CampoSelecao(props: {
       onChange={(v) => props.onChange(v == null || v === NENHUM ? null : String(v))}
     >
       <Label>{props.label}</Label>
-      <Select.Trigger>
-        <Select.Value />
+      <Select.Trigger className="items-center">
+        <Select.Value className="min-w-0 truncate">
+          {selecionado ? <span title={selecionado}>{selecionado}</span> : undefined}
+        </Select.Value>
         <Select.Indicator />
       </Select.Trigger>
       {props.descricao && <Description>{props.descricao}</Description>}
@@ -186,8 +190,8 @@ export function CampoMultiplo(props: {
       onChange={(v) => props.onChange((v as (string | number)[]).map(String))}
     >
       <Label>{props.label}</Label>
-      <Select.Trigger>
-        <Select.Value />
+      <Select.Trigger className="items-center">
+        <Select.Value className="min-w-0 truncate" />
         <Select.Indicator />
       </Select.Trigger>
       {props.descricao && <Description>{props.descricao}</Description>}
