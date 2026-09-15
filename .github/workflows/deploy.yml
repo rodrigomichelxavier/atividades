@@ -23,7 +23,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      # npm install (e não npm ci): o lock gerado no Windows omite dependências
+      # opcionais do Linux (@emnapi/*) e o npm ci recusa o lock.
+      - run: npm install --no-audit --no-fund
       - run: npm run lint
       - run: npm run build
         env:
