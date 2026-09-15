@@ -105,7 +105,7 @@ export function FormAtividade({
         onChange={(v) => set("titulo", v)}
       />
       <CampoTexto multilinha label="Descrição" valor={valor.descricao} onChange={(v) => set("descricao", v)} />
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <CampoSelecao
           label="Responsável"
           opcoes={opcoesPessoas(dados.pessoas)}
