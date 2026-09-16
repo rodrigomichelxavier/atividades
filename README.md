@@ -1,4 +1,4 @@
-# Atividades RX
+# Gestão de Atividades
 
 Gestão pessoal de atividades e fluxos de trabalho.
 

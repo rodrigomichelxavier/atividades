@@ -2,19 +2,22 @@
 
 import {
   ArrowRightFromSquare,
+  Bars,
   ChartColumn,
   CircleCheck,
   FilePlus,
   FolderOpen,
   Gear,
   LayoutColumns3,
+  ListCheck,
   ListUl,
   Persons,
   TriangleExclamation,
+  Xmark,
 } from "@gravity-ui/icons";
 import { Alert, Button, Card, Chip, Spinner, Tabs, Toast } from "@heroui/react";
 import { I18nProvider } from "react-aria-components/I18nProvider";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { ErroPlanilha } from "@/lib/planilha";
 import { DadosProvider, useDados, type Salvamento } from "@/lib/store";
 import { Atividades } from "./atividades";
@@ -43,7 +46,7 @@ function Conteudo() {
     <main className="flex flex-1 items-center justify-center px-4 py-12">
       <Card className="w-full max-w-lg">
         <Card.Header>
-          <Card.Title className="text-2xl">Atividades RX</Card.Title>
+          <Card.Title className="text-2xl">Gestão de Atividades</Card.Title>
           <Card.Description>Gestão de atividades e fluxos. Seus dados ficam numa planilha no seu computador.</Card.Description>
         </Card.Header>
         <Card.Content>
@@ -171,12 +174,21 @@ function ListaErros({ erros }: { erros: ErroPlanilha[] }) {
   );
 }
 
-type Aba = "painel" | "fluxos" | "atividades" | "kanban" | "time";
+type Aba = "painel" | "atividades" | "kanban" | "time" | "fluxos";
+
+const SECOES: { id: Aba; rotulo: string; icone: ReactNode }[] = [
+  { id: "painel", rotulo: "Painel", icone: <ChartColumn className="size-4" /> },
+  { id: "atividades", rotulo: "Atividades", icone: <ListUl className="size-4" /> },
+  { id: "kanban", rotulo: "Kanban", icone: <LayoutColumns3 className="size-4" /> },
+  { id: "time", rotulo: "Time", icone: <Persons className="size-4" /> },
+  { id: "fluxos", rotulo: "Fluxos", icone: <Gear className="size-4" /> },
+];
 
 function Shell() {
   const { nomeArquivo, fecharArquivo } = useDados();
   const [aba, setAba] = useState<Aba>("atividades");
   const [atividadeAberta, setAtividadeAberta] = useState<string | null>(null);
+  const [menuAberto, setMenuAberto] = useState(false);
 
   function abrirAtividade(id: string | null) {
     setAtividadeAberta(id);
@@ -184,73 +196,120 @@ function Shell() {
   }
 
   return (
-    <div className="flex flex-1 flex-col">
-      <header className="border-b border-border bg-surface">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3">
-          <h1 className="text-lg font-semibold">Atividades RX</h1>
-          <div className="ml-auto flex items-center gap-2">
-            <Chip size="sm" variant="secondary">
-              {nomeArquivo}
-            </Chip>
-            <IndicadorSalvamento />
-            <Button size="sm" variant="ghost" onPress={fecharArquivo}>
-              Trocar arquivo
-            </Button>
-          </div>
+    <Tabs
+      align="start"
+      className="flex min-h-full flex-1 flex-col md:flex-row"
+      orientation="vertical"
+      variant="secondary"
+      selectedKey={aba}
+      onSelectionChange={(k) => {
+        setAba(k as Aba);
+        setMenuAberto(false);
+        if (k === "atividades") setAtividadeAberta(null);
+      }}
+    >
+      {/* Barra superior só no celular, onde a lateral vira gaveta. */}
+      <header className="flex items-center gap-3 border-b border-border bg-surface px-4 py-3 md:hidden">
+        <Button isIconOnly aria-label="Abrir menu" size="sm" variant="ghost" onPress={() => setMenuAberto(true)}>
+          <Bars />
+        </Button>
+        <Marca />
+        <div className="ml-auto">
+          <IndicadorSalvamento />
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-4 py-6">
-        <AlertaSalvamento />
-        <Tabs
-          selectedKey={aba}
-          onSelectionChange={(k) => {
-            setAba(k as Aba);
-            if (k === "atividades") setAtividadeAberta(null);
-          }}
-        >
-          <Tabs.ListContainer>
-            <Tabs.List aria-label="Seções" className="w-fit">
-              <Tabs.Tab id="painel">
-                <ChartColumn className="size-4" /> Painel
-                <Tabs.Indicator />
-              </Tabs.Tab>
-              <Tabs.Tab id="fluxos">
-                <Gear className="size-4" /> Fluxos
-                <Tabs.Indicator />
-              </Tabs.Tab>
-              <Tabs.Tab id="atividades">
-                <ListUl className="size-4" /> Atividades
-                <Tabs.Indicator />
-              </Tabs.Tab>
-              <Tabs.Tab id="kanban">
-                <LayoutColumns3 className="size-4" /> Kanban
-                <Tabs.Indicator />
-              </Tabs.Tab>
-              <Tabs.Tab id="time">
-                <Persons className="size-4" /> Time
-                <Tabs.Indicator />
-              </Tabs.Tab>
+      {menuAberto && (
+        <div
+          aria-hidden
+          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          onClick={() => setMenuAberto(false)}
+        />
+      )}
+
+      <aside
+        className={`w-64 shrink-0 flex-col justify-between gap-6 border-border bg-surface p-4 md:sticky md:top-0 md:flex md:h-dvh md:w-60 md:border-r ${
+          menuAberto ? "fixed inset-y-0 left-0 z-40 flex shadow-xl" : "hidden"
+        }`}
+      >
+        <div className="flex min-h-0 flex-col gap-6">
+          <div className="flex items-center justify-between gap-2">
+            <Marca />
+            <Button
+              isIconOnly
+              aria-label="Fechar menu"
+              className="md:hidden"
+              size="sm"
+              variant="ghost"
+              onPress={() => setMenuAberto(false)}
+            >
+              <Xmark />
+            </Button>
+          </div>
+
+          {/* O indicador do HeroUI se desloca uma linha na orientação vertical, então
+              o item ativo é marcado pelo estilo da própria aba. */}
+          <Tabs.ListContainer className="min-h-0 overflow-y-auto rounded-none border-s-0 bg-transparent">
+            <Tabs.List aria-label="Seções" className="w-full gap-1">
+              {SECOES.map((secao) => (
+                <Tabs.Tab
+                  key={secao.id}
+                  className="h-10 justify-start gap-2 rounded-lg px-3 hover:bg-default-hover data-[selected=true]:bg-default data-[selected=true]:font-semibold data-[selected=true]:text-foreground"
+                  id={secao.id}
+                >
+                  {secao.icone}
+                  {secao.rotulo}
+                </Tabs.Tab>
+              ))}
             </Tabs.List>
           </Tabs.ListContainer>
-          <Tabs.Panel className="pt-4" id="painel">
-            <Painel onAbrirAtividade={abrirAtividade} />
-          </Tabs.Panel>
-          <Tabs.Panel className="pt-4" id="fluxos">
-            <Fluxos onAbrirAtividade={abrirAtividade} />
-          </Tabs.Panel>
-          <Tabs.Panel className="pt-4" id="atividades">
-            <Atividades selecionada={atividadeAberta} onSelecionar={abrirAtividade} />
-          </Tabs.Panel>
-          <Tabs.Panel className="pt-4" id="kanban">
-            <Kanban onAbrirAtividade={abrirAtividade} />
-          </Tabs.Panel>
-          <Tabs.Panel className="pt-4" id="time">
-            <Time />
-          </Tabs.Panel>
-        </Tabs>
+        </div>
+
+        {/* Rodapé da lateral: de qual planilha vêm os dados e como está o salvamento. */}
+        <div className="flex flex-col gap-2 border-t border-border pt-4">
+          <Chip className="max-w-full" size="sm" variant="secondary">
+            <span className="block truncate" title={nomeArquivo ?? undefined}>
+              {nomeArquivo}
+            </span>
+          </Chip>
+          <IndicadorSalvamento />
+          <Button className="justify-start" size="sm" variant="ghost" onPress={fecharArquivo}>
+            <FolderOpen />
+            Trocar arquivo
+          </Button>
+        </div>
+      </aside>
+
+      <main className="flex w-full min-w-0 flex-1 flex-col gap-4 px-4 py-6 md:px-8">
+        <AlertaSalvamento />
+        <Tabs.Panel id="painel">
+          <Painel onAbrirAtividade={abrirAtividade} />
+        </Tabs.Panel>
+        <Tabs.Panel id="atividades">
+          <Atividades selecionada={atividadeAberta} onSelecionar={abrirAtividade} />
+        </Tabs.Panel>
+        <Tabs.Panel id="kanban">
+          <Kanban onAbrirAtividade={abrirAtividade} />
+        </Tabs.Panel>
+        <Tabs.Panel id="time">
+          <Time />
+        </Tabs.Panel>
+        <Tabs.Panel id="fluxos">
+          <Fluxos onAbrirAtividade={abrirAtividade} />
+        </Tabs.Panel>
       </main>
-    </div>
+    </Tabs>
+  );
+}
+
+function Marca() {
+  return (
+    <span className="flex items-center gap-2">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent text-white">
+        <ListCheck className="size-4" />
+      </span>
+      <span className="text-base font-semibold whitespace-nowrap">Gestão de Atividades</span>
+    </span>
   );
 }
 

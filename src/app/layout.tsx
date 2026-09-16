@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Atividades RX",
-  description: "Gestão de atividades e fluxos",
+  title: "Gestão de Atividades",
+  description: "Atividades, fluxos de trabalho e prazos, com os dados numa planilha sua",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

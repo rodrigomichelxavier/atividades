@@ -226,10 +226,10 @@ export function gerarPlanilha(dados: Dados): ArrayBuffer {
   XLSX.utils.book_append_sheet(
     wb,
     XLSX.utils.aoa_to_sheet([
-      ["Atividades RX"],
+      ["Gestão de Atividades"],
       ["Versão do formato", VERSAO_FORMATO],
       [],
-      ["Esta planilha é o banco de dados da aplicação Atividades RX."],
+      ["Esta planilha é o banco de dados da aplicação Gestão de Atividades."],
       ["Feche o arquivo no Excel antes de usar a aplicação, senão ela não consegue salvar."],
       ["Não renomeie as abas nem os cabeçalhos das colunas."],
     ]),
