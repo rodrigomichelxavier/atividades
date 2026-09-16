@@ -153,7 +153,7 @@ function ListaFluxos({ onIr }: { onIr: (v: Vista) => void }) {
                       {iniciados > 0 && ` · ${iniciados} fluxo(s) iniciado(s)`}
                     </Card.Description>
                   </Card.Header>
-                  <Card.Content className="flex flex-wrap gap-2">
+                  <Card.Content className="flex flex-row flex-wrap gap-2">
                     <Button
                       isDisabled={itens.length === 0}
                       size="sm"
